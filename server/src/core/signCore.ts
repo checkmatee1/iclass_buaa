@@ -1,5 +1,6 @@
 import type { Got } from 'got';
 import { ICLASS_URLS } from '../config/constants';
+import logger from '../utils/logger';
 
 const parseJsonSafe = (body: unknown): any | null => {
     if (body && typeof body === 'object') {
@@ -53,8 +54,27 @@ export const signNow = async (
     });
 
     const parsedResult = parseJsonSafe(res.body);
+    const diagnostics = {
+        mode: useVpn ? 'WEBVPN' : 'DIRECT',
+        endpoint: new URL(signUrl).pathname,
+        httpStatus: res.statusCode,
+        requestTimestamp: timestamp,
+        requestTime: new Date(timestamp).toISOString(),
+        responseDate: res.headers.date ?? null,
+        responseContentType: res.headers['content-type'] ?? null
+    };
+
+    logger.info(`[sign] ${JSON.stringify({
+        ...diagnostics,
+        schoolStatus: parsedResult?.STATUS ?? null,
+        schoolMessage: parsedResult?.ERRMSG ?? null
+    })}`);
+
     if (parsedResult !== null) {
-        return parsedResult;
+        return {
+            ...parsedResult,
+            diagnostics
+        };
     }
 
     return {
@@ -62,6 +82,7 @@ export const signNow = async (
         ERRMSG: '签到接口返回非 JSON',
         statusCode: res.statusCode,
         location: res.headers.location ?? null,
-        raw: String(res.body).slice(0, 200)
+        raw: String(res.body).slice(0, 200),
+        diagnostics
     };
 };

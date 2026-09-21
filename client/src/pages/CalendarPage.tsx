@@ -263,11 +263,34 @@ const CalendarPage = () => {
                 return;
             }
 
-            const signPayload = (res.data ?? {}) as { ERRMSG?: unknown; STATUS?: unknown };
+            const signPayload = (res.data ?? {}) as {
+                ERRMSG?: unknown;
+                STATUS?: unknown;
+                diagnostics?: {
+                    mode?: unknown;
+                    endpoint?: unknown;
+                    httpStatus?: unknown;
+                    requestTime?: unknown;
+                    responseDate?: unknown;
+                };
+            };
             const errMsg = String(signPayload.ERRMSG ?? "");
             const status = String(signPayload.STATUS ?? "");
             const successLike = status === "0";
-            setSignMessage(successLike ? "签到成功" : `签到结果: ${errMsg || "已提交"}`);
+            const diagnosticText = signPayload.diagnostics
+                ? [
+                    `模式=${String(signPayload.diagnostics.mode ?? "未知")}`,
+                    `HTTP=${String(signPayload.diagnostics.httpStatus ?? "未知")}`,
+                    `接口=${String(signPayload.diagnostics.endpoint ?? "未知")}`,
+                    `请求时间=${String(signPayload.diagnostics.requestTime ?? "未知")}`,
+                    `响应时间=${String(signPayload.diagnostics.responseDate ?? "未知")}`
+                ].join("；")
+                : "无诊断信息";
+            setSignMessage(
+                successLike
+                    ? "签到成功"
+                    : `签到失败: ${errMsg || "学校接口未说明原因"}（${diagnosticText}）`
+            );
 
             if (successLike) {
                 setDetailItems((prev) =>

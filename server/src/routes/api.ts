@@ -28,15 +28,22 @@ interface SessionState {
 const sessions = new Map<string, SessionState>();
 
 const DEFAULT_API_PORT = Number(process.env.API_PORT ?? 3000);
+const ALLOWED_ORIGINS = new Set([
+	'http://localhost:4000',
+	'http://127.0.0.1:4000'
+]);
 
-const setCorsHeaders = (res: ServerResponse): void => {
-	res.setHeader('Access-Control-Allow-Origin', '*');
+const setCorsHeaders = (req: IncomingMessage, res: ServerResponse): void => {
+	const origin = String(req.headers.origin ?? '');
+	if (ALLOWED_ORIGINS.has(origin)) {
+		res.setHeader('Access-Control-Allow-Origin', origin);
+		res.setHeader('Vary', 'Origin');
+	}
 	res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Token');
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 };
 
 const sendJson = (res: ServerResponse, statusCode: number, payload: AnyServiceResult | Record<string, unknown>): void => {
-	setCorsHeaders(res);
 	res.statusCode = statusCode;
 	res.setHeader('Content-Type', 'application/json; charset=utf-8');
 	res.end(JSON.stringify(payload));
@@ -90,7 +97,7 @@ const extractToken = (req: IncomingMessage, urlObj: URL): string => {
 		return authHeader.slice(7).trim();
 	}
 
-	return String(urlObj.searchParams.get('token') ?? '').trim();
+	return '';
 };
 
 const unauthorized = (res: ServerResponse): void => {
@@ -299,7 +306,7 @@ const handleLogout = (req: IncomingMessage, res: ServerResponse, urlObj: URL): v
 
 export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 	const server = createServer(async (req, res) => {
-		setCorsHeaders(res);
+		setCorsHeaders(req, res);
 
 		if (req.method === 'OPTIONS') {
 			res.statusCode = 204;

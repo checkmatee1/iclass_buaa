@@ -21,24 +21,41 @@ PR 链接： https://github.com/zeroduhyy/iclass_buaa/pull/20
 
 *注：原先的 Python 版本代码已迁移至 `python` 分支，全新版本请参考当前分支。*
 
-### 1. 一键式部署 (本地运行)
+### 1. macOS 本地运行
 
 在项目根目录下运行以下脚本命令，会自动安装相关依赖：
 
-**Windows 环境:**
+在 macOS 终端中执行：
+
+```cmd
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+```
+
+脚本会安装根目录、客户端和服务端依赖，并可直接启动 Electron 应用。
+
+也可以手动执行：
+
+```bash
+npm install
+cd client && npm install && cd ..
+cd server && npm install && cd ..
+npm run dev
+```
+
+`npm run dev` 会同时启动本地后端、Vite 前端和 Electron 窗口。只启动浏览器开发页面时使用 `npm run dev:browser`。
+
+### 2. Windows 本地运行
+
 ```cmd
 ./scripts/setup.bat
 ```
 
-**Linux / Mac 环境:**
-```bash
-./scripts/setup.sh
-```
-*运行成功后会自动打开客户端界面，即可访问并使用。*
+### 3. 打包说明
 
-### 2. 打包生成 Windows 软件 (.exe)
+当前任务只支持在本机直接运行，不提供 macOS 安装包，也不要求生成独立可执行文件。
 
-项目目前已配置为仅打包 Windows 版本。如需生成独立的可执行程序，可在项目根目录下运行以下命令：
+如需保留原有 Windows 打包能力，可运行：
 
 ```bash
 npm run build:win

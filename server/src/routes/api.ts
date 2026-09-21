@@ -379,7 +379,7 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 		}
 	});
 
-	server.listen(port, () => {
+	server.listen(port, '127.0.0.1', () => {
 		logger.info(`[api] server started at http://127.0.0.1:${port}`);
 	});
 

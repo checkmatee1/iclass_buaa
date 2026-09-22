@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SubmitEventHandler } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api/auth";
+import { defaultLogin, login } from "../api/auth";
 import { setSession } from "../utils/session";
 
 const LoginStudentPage = () => {
@@ -9,6 +9,25 @@ const LoginStudentPage = () => {
     const [studentId, setStudentId] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    const handleDefaultLogin = async () => {
+        setLoading(true);
+        setError("");
+        try {
+            const res = await defaultLogin();
+            if (!res.ok || !res.data) {
+                setError(res.message || "默认 VPN 登录失败");
+                return;
+            }
+
+            setSession(res.data.token, res.data.userId, res.data.userName, true);
+            navigate("/calendar", { replace: true });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "默认 VPN 登录失败");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleDirectLogin: SubmitEventHandler<HTMLFormElement> = async (event) => {
         event.preventDefault();
@@ -55,6 +74,10 @@ const LoginStudentPage = () => {
                     <h1 className="auth-title">签到系统登录</h1>
                     <p className="hint auth-subtitle">先输入学号，再选择登录方式</p>
                 </div>
+
+                <button type="button" className="secondary" onClick={() => void handleDefaultLogin()} disabled={loading}>
+                    {loading ? "登录中..." : "登录我的账号"}
+                </button>
 
                 <form onSubmit={handleDirectLogin} className="stack" autoComplete="off">
                     <label htmlFor="studentId" className="student-id-label">学号</label>

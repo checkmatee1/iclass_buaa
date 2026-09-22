@@ -28,6 +28,7 @@ interface SessionState {
 const sessions = new Map<string, SessionState>();
 
 const DEFAULT_API_PORT = Number(process.env.API_PORT ?? 3000);
+const DEFAULT_API_HOST = String(process.env.API_HOST ?? '127.0.0.1');
 const ALLOWED_ORIGINS = new Set([
 	'http://localhost:4000',
 	'http://127.0.0.1:4000'
@@ -195,6 +196,54 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
 	}
 };
 
+const handleDefaultLogin = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const studentId = String(process.env.ICLASS_DEFAULT_STUDENT_ID ?? '').trim();
+	const vpnUsername = String(process.env.ICLASS_DEFAULT_VPN_USERNAME ?? '').trim();
+	const vpnPassword = String(process.env.ICLASS_DEFAULT_VPN_PASSWORD ?? '');
+
+	if (!studentId || !vpnUsername || !vpnPassword) {
+		sendJson(res, 404, {
+			ok: false,
+			code: 'DEFAULT_LOGIN_NOT_CONFIGURED',
+			message: '未配置默认 VPN 用户',
+			data: null
+		});
+		return;
+	}
+
+	try {
+		const context = await loginAndBuildContext({
+			studentId,
+			useVpn: true,
+			vpnUsername,
+			vpnPassword
+		});
+		const token = randomUUID();
+		sessions.set(token, { context, courses: [] });
+
+		sendJson(res, 200, {
+			ok: true,
+			code: 'OK',
+			message: '默认 VPN 登录成功',
+			data: {
+				token,
+				userId: context.userId,
+				userName: context.userName,
+				sessionId: context.sessionId
+			}
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : '默认 VPN 登录失败';
+		logger.warn(`[default-login] 登录失败: ${message}`);
+		sendJson(res, 401, {
+			ok: false,
+			code: 'AUTH_FAILED',
+			message: '默认 VPN 登录失败，请使用手动登录',
+			data: null
+		});
+	}
+};
+
 const handleCourses = async (req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> => {
 	const token = extractToken(req, urlObj);
 	const state = sessions.get(token);
@@ -247,7 +296,6 @@ const handleSign = async (req: IncomingMessage, res: ServerResponse, urlObj: URL
 	}
 
 	const courseSchedId = String(body?.courseSchedId ?? '').trim();
-	const timestamp = Number(Date.now() + state.context.client.serverTimeOffset);
 
 	if (!courseSchedId) {
 		sendJson(res, 400, {
@@ -269,7 +317,7 @@ const handleSign = async (req: IncomingMessage, res: ServerResponse, urlObj: URL
 		}
 	}
 
-	const result = await signNowForFrontend(state.context.client, courseSchedId, timestamp);
+	const result = await signNowForFrontend(state.context.client, courseSchedId);
 	sendJson(res, result.ok ? 200 : 400, result);
 };
 
@@ -336,6 +384,11 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 				return;
 			}
 
+			if (method === 'POST' && path === '/api/default-login') {
+				await handleDefaultLogin(req, res);
+				return;
+			}
+
 			if (method === 'GET' && path === '/api/courses') {
 				await handleCourses(req, res, urlObj);
 				return;
@@ -379,8 +432,8 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 		}
 	});
 
-	server.listen(port, '127.0.0.1', () => {
-		logger.info(`[api] server started at http://127.0.0.1:${port}`);
+	server.listen(port, DEFAULT_API_HOST, () => {
+		logger.info(`[api] server started at http://${DEFAULT_API_HOST}:${port}`);
 	});
 
 	return server;

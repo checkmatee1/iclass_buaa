@@ -4,9 +4,9 @@ export const SSO_URLS = {
 };
 
 const VPN_BASE = "https://d.buaa.edu.cn/https-8347/77726476706e69737468656265737421f9f44d9d342326526b0988e29d51367ba018";
+const VPN_SIGN_BASE = "https://d.buaa.edu.cn/http-8081/77726476706e69737468656265737421f9f44d9d342326526b0988e29d51367ba018";
 const DIRECT_BASE = "https://iclass.buaa.edu.cn:8347";
-const VPN_SIGN_BASE = "https://d.buaa.edu.cn/https-8346/77726476706e69737468656265737421f9f44d9d342326526b0988e29d51367ba018";
-const DIRECT_SIGN_BASE = "https://iclass.buaa.edu.cn:8346";
+const DIRECT_SIGN_BASE = "http://iclass.buaa.edu.cn:8081";
 
 export const ICLASS_URLS = {
     VPN: {
@@ -16,6 +16,7 @@ export const ICLASS_URLS = {
         COURSE_LIST: `${VPN_BASE}/app/choosecourse/get_myall_course.action`,
         SEMESTER_LIST: `${VPN_BASE}/app/course/get_base_school_year.action`,
         COURSE_SIGN_DETAIL: `${VPN_BASE}/app/my/get_my_course_sign_detail.action`,
+        SIGN_TIMESTAMP: `${VPN_SIGN_BASE}/app/common/get_timestamp.action`,
         SCAN_SIGN: `${VPN_SIGN_BASE}/eschool/app/course/stu_scan_sign.action`,
         COURSE_SCHEDULE_BY_DATE: `${VPN_BASE}/app/course/get_stu_course_sched.action`
     },
@@ -26,6 +27,7 @@ export const ICLASS_URLS = {
         COURSE_LIST: `${DIRECT_BASE}/app/choosecourse/get_myall_course.action`,
         SEMESTER_LIST: `${DIRECT_BASE}/app/course/get_base_school_year.action`,
         COURSE_SIGN_DETAIL: `${DIRECT_BASE}/app/my/get_my_course_sign_detail.action`,
+        SIGN_TIMESTAMP: `${DIRECT_SIGN_BASE}/app/common/get_timestamp.action`,
         SCAN_SIGN: `${DIRECT_SIGN_BASE}/eschool/app/course/stu_scan_sign.action`,
         COURSE_SCHEDULE_BY_DATE: `${DIRECT_BASE}/app/course/get_stu_course_sched.action`
     }

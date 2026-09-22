@@ -32,7 +32,7 @@ chmod +x scripts/setup.sh
 ./scripts/setup.sh
 ```
 
-脚本会安装根目录、客户端和服务端依赖，并可直接启动 Electron 应用。
+脚本会安装根目录、客户端和服务端依赖，并可直接启动浏览器开发页面。
 
 也可以手动执行：
 
@@ -43,7 +43,17 @@ cd server && npm install && cd ..
 npm run dev
 ```
 
-`npm run dev` 会同时启动本地后端、Vite 前端和 Electron 窗口。只启动浏览器开发页面时使用 `npm run dev:browser`。
+`npm run dev` 会同时启动本地后端和 Vite 前端。启动后在浏览器访问 `http://127.0.0.1:4000`。
+
+如需配置默认 VPN 用户，复制 `.env.example` 为 `.env`，填写以下变量：
+
+```env
+ICLASS_DEFAULT_STUDENT_ID=
+ICLASS_DEFAULT_VPN_USERNAME=
+ICLASS_DEFAULT_VPN_PASSWORD=
+```
+
+配置完成后，打开登录页会优先尝试默认 VPN 登录；未配置或登录失败时仍可手动登录。
 
 ### 2. Windows 本地运行
 
@@ -51,21 +61,13 @@ npm run dev
 ./scripts/setup.bat
 ```
 
-### 3. 打包说明
+### 3. 构建检查
 
-当前任务只支持在本机直接运行，不提供 macOS 安装包，也不要求生成独立可执行文件。
-
-如需保留原有 Windows 打包能力，可运行：
+当前项目只通过浏览器运行，不提供桌面窗口或安装包。需要检查前端和服务端构建时运行：
 
 ```bash
-npm run build:win
+npm run build
 ```
-*提示：编译打包完成后，生成的免安装绿色版及 `.exe` 安装程序将自动输出在项目根目录的 `dist_exe` 文件夹中。*
-
-### 🎨 附：修改应用图标
-
-如果需要更换打包生成软件的图标，请直接替换/覆盖项目根目录下的对应文件：
-- `icon.ico`（替换为你自己的 Windows 图标文件，保持名字不变即可）
 
 ---
 

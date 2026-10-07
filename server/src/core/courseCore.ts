@@ -286,7 +286,7 @@ export const getCourseByDate = async (
         details.push({
             name: String(record?.courseName ?? '未知课程'),
             id: String(record?.courseId ?? ''),
-            courseSchedId: String(record?.id ?? ''),
+            courseSchedId: String(record?.courseSchedId ?? record?.id ?? ''),
             date: formattedDate,
             startTime: normalizeTimeDisplay(String(record?.classBeginTime ?? '')),
             endTime: normalizeTimeDisplay(String(record?.classEndTime ?? '')),

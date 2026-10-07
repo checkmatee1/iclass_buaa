@@ -79,7 +79,7 @@ const parseBool = (value: unknown, fallback: boolean): boolean => {
 	return fallback;
 };
 
-const extractToken = (req: IncomingMessage, urlObj: URL): string => {
+const extractToken = (req: IncomingMessage): string => {
 	const headerToken = String(req.headers['x-session-token'] ?? '').trim();
 	if (headerToken) {
 		return headerToken;
@@ -90,7 +90,7 @@ const extractToken = (req: IncomingMessage, urlObj: URL): string => {
 		return authHeader.slice(7).trim();
 	}
 
-	return String(urlObj.searchParams.get('token') ?? '').trim();
+	return '';
 };
 
 const unauthorized = (res: ServerResponse): void => {
@@ -122,39 +122,26 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
 	logger.info(`[login] 收到请求 content-type=${String(req.headers['content-type'] ?? '')}, keys=[${bodyKeys}]`);
 
 	const studentId = String(body?.studentId ?? '').trim();
+	const password = String(body?.password ?? '');
 	const useVpn = parseBool(body?.useVpn, false);
-	const vpnUsername = String(body?.vpnUsername ?? '').trim();
-	const vpnPassword = String(body?.vpnPassword ?? '');
 
-	if (!studentId) {
-		logger.warn(`[login] 参数缺失: studentIdPresent=false, bodyKeys=[${bodyKeys}]`);
+	if (!studentId || !password) {
+		logger.warn(`[login] 参数缺失: studentIdPresent=${Boolean(studentId)}, passwordPresent=${Boolean(password)}, bodyKeys=[${bodyKeys}]`);
 		sendJson(res, 400, {
 			ok: false,
 			code: 'INVALID_PARAM',
-			message: 'studentId 不能为空',
+			message: !studentId ? '学号不能为空' : '请输入统一认证密码',
 			data: null
 		});
 		return;
 	}
 
 
-
-	if (useVpn && (!vpnUsername || !vpnPassword)) {
-		logger.warn(`[login] VPN 模式缺少认证参数: studentId=${studentId}, vpnUsernamePresent=${vpnUsername.length > 0}, vpnPasswordPresent=${vpnPassword.length > 0}`);
-		sendJson(res, 400, {
-			ok: false,
-			code: 'INVALID_PARAM',
-			message: 'VPN 模式必须同时提供 vpnUsername 和 vpnPassword',
-			data: null
-		});
-		return;
-	}
 
 	const input: LoginInput = {
 		studentId,
-		useVpn,
-		vpnUsername,
-		vpnPassword
+		password,
+		useVpn
 	};
 
 	logger.info(`[login] 参数校验通过: studentId=${studentId}, useVpn=${input.useVpn}`);
@@ -162,6 +149,11 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
 	try {
 		const context = await loginAndBuildContext(input);
 		const token = randomUUID();
+		for (const [existingToken, state] of sessions) {
+			if (state.context.studentId === context.studentId && state.context.useVpn === context.useVpn) {
+				sessions.delete(existingToken);
+			}
+		}
 		sessions.set(token, { context, courses: [] });
 		logger.info(`[login] 登录成功: userId=${context.userId}, userName=${context.userName}, token=${token.slice(0, 8)}...`);
 
@@ -172,8 +164,7 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
 			data: {
 				token,
 				userId: context.userId,
-				userName: context.userName,
-				sessionId: context.sessionId
+				userName: context.userName
 			}
 		});
 	} catch (error) {
@@ -188,8 +179,8 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
 	}
 };
 
-const handleCourses = async (req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> => {
-	const token = extractToken(req, urlObj);
+const handleCourses = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const token = extractToken(req);
 	const state = sessions.get(token);
 	if (!state) {
 		unauthorized(res);
@@ -206,8 +197,8 @@ const handleCourses = async (req: IncomingMessage, res: ServerResponse, urlObj: 
 	sendJson(res, 400, result);
 };
 
-const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> => {
-	const token = extractToken(req, urlObj);
+const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const token = extractToken(req);
 	const state = sessions.get(token);
 	if (!state) {
 		unauthorized(res);
@@ -228,10 +219,9 @@ const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse, ur
 	sendJson(res, result.ok ? 200 : 400, result);
 };
 
-const handleSign = async (req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> => {
-	const tokenFromQuery = extractToken(req, urlObj);
+const handleSign = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const token = extractToken(req);
 	const body = await readJsonBody(req);
-	const token = tokenFromQuery || String(body?.token ?? '').trim();
 	const state = sessions.get(token);
 
 	if (!state) {
@@ -240,7 +230,6 @@ const handleSign = async (req: IncomingMessage, res: ServerResponse, urlObj: URL
 	}
 
 	const courseSchedId = String(body?.courseSchedId ?? '').trim();
-	const timestamp = Number(Date.now() + state.context.client.serverTimeOffset);
 
 	if (!courseSchedId) {
 		sendJson(res, 400, {
@@ -262,14 +251,13 @@ const handleSign = async (req: IncomingMessage, res: ServerResponse, urlObj: URL
 		}
 	}
 
-	const result = await signNowForFrontend(state.context.client, courseSchedId, timestamp);
+	const result = await signNowForFrontend(state.context.client, courseSchedId);
 	sendJson(res, result.ok ? 200 : 400, result);
 };
 
-const handleSignQr = async (req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> => {
-	const tokenFromQuery = extractToken(req, urlObj);
+const handleSignQr = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const token = extractToken(req);
 	const body = await readJsonBody(req);
-	const token = tokenFromQuery || String(body?.token ?? '').trim();
 	const state = sessions.get(token);
 
 	if (!state) {
@@ -278,13 +266,16 @@ const handleSignQr = async (req: IncomingMessage, res: ServerResponse, urlObj: U
 	}
 
 	const courseSchedId = String(body?.courseSchedId ?? '').trim();
-	const timestamp = Number(Date.now() + state.context.client.serverTimeOffset);
-	const result = await generateSignQrForFrontend(state.context.useVpn, courseSchedId, timestamp);
+	const result = await generateSignQrForFrontend(
+		state.context.client,
+		state.context.useVpn,
+		courseSchedId
+	);
 	sendJson(res, result.ok ? 200 : 400, result);
 };
 
-const handleLogout = (req: IncomingMessage, res: ServerResponse, urlObj: URL): void => {
-	const token = extractToken(req, urlObj);
+const handleLogout = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+	const token = extractToken(req);
 	if (token) {
 		sessions.delete(token);
 	}
@@ -330,27 +321,27 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 			}
 
 			if (method === 'GET' && path === '/api/courses') {
-				await handleCourses(req, res, urlObj);
+				await handleCourses(req, res);
 				return;
 			}
 
 			if (method === 'GET' && path === '/api/course-details') {
-				await handleCourseDetails(req, res, urlObj);
+				await handleCourseDetails(req, res);
 				return;
 			}
 
 			if (method === 'POST' && path === '/api/sign') {
-				await handleSign(req, res, urlObj);
+				await handleSign(req, res);
 				return;
 			}
 
 			if (method === 'POST' && path === '/api/sign-qr') {
-				await handleSignQr(req, res, urlObj);
+				await handleSignQr(req, res);
 				return;
 			}
 
 			if (method === 'POST' && path === '/api/logout') {
-				handleLogout(req, res, urlObj);
+				await handleLogout(req, res);
 				return;
 			}
 
@@ -372,7 +363,7 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 		}
 	});
 
-	server.listen(port, () => {
+	server.listen(port, '127.0.0.1', () => {
 		logger.info(`[api] server started at http://127.0.0.1:${port}`);
 	});
 

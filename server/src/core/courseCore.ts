@@ -258,14 +258,14 @@ export const getCourseByDate = async (
     });
 
     if (res.statusCode !== 200) {
-        return [];
+        throw new Error(`获取 ${dateStr} 课程失败（HTTP=${res.statusCode}）`);
     }
 
     let data: any;
     try {
         data = typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
     } catch {
-        return [];
+        throw new Error(`获取 ${dateStr} 课程失败：接口返回非 JSON`);
     }
 
     // iClass STATUS=2 表示当天无数据，按空数组处理。
@@ -273,7 +273,8 @@ export const getCourseByDate = async (
         return [];
     }
     if (data?.STATUS !== '0') {
-        return [];
+        const message = String(data?.ERRMSG ?? data?.message ?? '学校接口未说明原因');
+        throw new Error(`获取 ${dateStr} 课程失败（STATUS=${String(data?.STATUS ?? 'unknown')}）：${message}`);
     }
 
     const records = Array.isArray(data?.result) ? data.result : [];

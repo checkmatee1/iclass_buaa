@@ -17,6 +17,7 @@ import {
 	SemesterCoursesData
 } from '../services/courseService';
 import logger from '../utils/logger';
+import type { AutoSignServiceStatus } from '../services/autoSignService';
 
 type AnyServiceResult = AuthServiceResult<any> | CourseServiceResult<any>;
 
@@ -352,7 +353,11 @@ const handleLogout = (req: IncomingMessage, res: ServerResponse, urlObj: URL): v
 	});
 };
 
-export const startApiServer = (port: number = DEFAULT_API_PORT) => {
+export interface ApiServerOptions {
+	getAutoSignStatus?: () => AutoSignServiceStatus;
+}
+
+export const startApiServer = (port: number = DEFAULT_API_PORT, options: ApiServerOptions = {}) => {
 	const server = createServer(async (req, res) => {
 		setCorsHeaders(req, res);
 
@@ -373,7 +378,8 @@ export const startApiServer = (port: number = DEFAULT_API_PORT) => {
 					code: 'OK',
 					message: 'service running',
 					data: {
-						activeSessions: sessions.size
+						activeSessions: sessions.size,
+						autoSign: options.getAutoSignStatus?.() ?? null
 					}
 				});
 				return;

@@ -8,6 +8,8 @@ services:
     environment:
       API_HOST: 0.0.0.0
       API_PORT: 3000
+      AUTO_SIGN_ENABLED: ${AUTO_SIGN_ENABLED:-true}
+      TZ: Asia/Shanghai
     expose:
       - "3000"
     restart: unless-stopped

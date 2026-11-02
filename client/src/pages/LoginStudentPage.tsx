@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SubmitEventHandler } from "react";
 import { useNavigate } from "react-router-dom";
-import { defaultLogin, login, submitCaptcha } from "../api/auth";
+import { defaultLogin, isConnectionFailure, login, submitCaptcha } from "../api/auth";
 import type { ApiResponse, LoginOutcome, CaptchaChallenge } from "../types/api";
 import { setSession } from "../utils/session";
 
@@ -27,7 +27,7 @@ const LoginStudentPage = () => {
         if (!res.ok || !res.data || !("token" in res.data)) {
             setError(res.message || "登录失败，请重试");
             // A submission consumes its challenge. Restart on all terminal failures.
-            if (res.code !== "REQUEST_FAILED" && res.code !== "INVALID_PARAM") setChallenge(null);
+            if (!isConnectionFailure(res.code) && res.code !== "INVALID_PARAM") setChallenge(null);
             return;
         }
         setPassword("");
@@ -56,7 +56,16 @@ const LoginStudentPage = () => {
         if (!refresh && !captcha.trim()) { setError("请输入图片验证码"); return; }
         setLoginMode("captcha");
         setError("");
-        try { acceptResult(await submitCaptcha(challenge.challengeId, captcha, refresh), challenge.useVpn); }
+        try {
+            let result = await submitCaptcha(challenge.challengeId, captcha, refresh);
+            if (challenge.isDefault && (isConnectionFailure(result.code) || result.code === "CAPTCHA_EXPIRED")) {
+                // Recover the server's current state without resubmitting an answer.
+                result = await defaultLogin();
+            } else if (isConnectionFailure(result.code)) {
+                result = {...result, message: "连接中断，当前验证码可能已失效，请返回登录重试"};
+            }
+            acceptResult(result, challenge.useVpn);
+        }
         finally { setLoginMode(null); }
     };
 

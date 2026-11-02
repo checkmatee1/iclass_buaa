@@ -50,7 +50,21 @@ body {
 
 .auth-card {
   width: min(520px, 94vw);
-  padding: 28px;
+  padding: 32px 36px;
+}
+
+.auth-form {
+  width: min(400px, 100%);
+  margin: 0 auto;
+  gap: 12px;
+}
+
+.auth-form label {
+  margin-top: 2px;
+}
+
+.auth-form input {
+  min-height: 48px;
 }
 
 .auth-title-wrap {
@@ -96,6 +110,12 @@ input {
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 15px;
+}
+
+input:focus {
+  outline: none;
+  border-color: #4b8fc8;
+  box-shadow: 0 0 0 3px rgba(75, 143, 200, 0.16);
 }
 
 .password-wrap {
@@ -201,21 +221,17 @@ button:disabled {
   justify-content: center;
 }
 
-.student-id-input {
-  width: min(320px, 100%);
-  margin: 0 auto;
-}
-
-.student-id-label {
-  width: min(320px, 100%);
-  margin: 0 auto;
-  text-align: left;
-}
-
 .auth-actions-lg > button {
-  min-width: 154px;
+  flex: 1;
+  min-width: 0;
   padding: 13px 20px;
   font-size: 16px;
+}
+
+.auth-actions-lg {
+  width: 100%;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .hint {
@@ -238,6 +254,12 @@ button:disabled {
   align-items: center;
   gap: 12px;
   margin-bottom: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .week-nav {
@@ -398,7 +420,8 @@ button:disabled {
 
 @media (max-width: 880px) {
   .topbar,
-  .actions {
+  .actions,
+  .topbar-actions {
     flex-direction: column;
     align-items: stretch;
   }

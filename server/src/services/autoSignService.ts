@@ -271,8 +271,8 @@ class DefaultAutoSignService implements AutoSignService {
             this.context = await loginAndBuildContext({
                 studentId: this.config.studentId,
                 useVpn: true,
-                vpnUsername: this.config.vpnUsername,
-                vpnPassword: this.config.vpnPassword
+                username: this.config.vpnUsername,
+                password: this.config.vpnPassword
             });
             this.loginAt = Date.now();
             this.nextLoginAttemptAt = 0;

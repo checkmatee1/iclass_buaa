@@ -199,9 +199,9 @@ export const signNowForFrontend = async (
 
 
 export const generateSignQrForFrontend = async (
+	client: IClassClient,
 	useVpn: boolean,
-	courseSchedId: string,
-	timestamp: number
+	courseSchedId: string
 ): Promise<ServiceResult<SignQrData>> => {
 	if (useVpn) {
 		return {
@@ -221,18 +221,27 @@ export const generateSignQrForFrontend = async (
 		};
 	}
 
-	const qrTimestamp = timestamp;
-	const signUrl = buildScanSignUrl(useVpn);
-	const qrUrl = `${signUrl}?courseSchedId=${encodeURIComponent(courseSchedId)}&timestamp=${encodeURIComponent(String(qrTimestamp))}`;
+	try {
+		const qrTimestamp = await client.getSignTimestamp();
+		const signUrl = buildScanSignUrl(useVpn);
+		const qrUrl = `${signUrl}?courseSchedId=${encodeURIComponent(courseSchedId)}&timestamp=${encodeURIComponent(String(qrTimestamp))}`;
 
-	return {
-		ok: true,
-		code: 'OK',
-		message: '二维码链接生成成功',
-		data: {
-			qrUrl,
-			courseSchedId,
-			timestamp: qrTimestamp
-		}
-	};
+		return {
+			ok: true,
+			code: 'OK',
+			message: '二维码链接生成成功',
+			data: {
+				qrUrl,
+				courseSchedId,
+				timestamp: qrTimestamp
+			}
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			code: 'SIGN_TIMESTAMP_FAILED',
+			message: normalizeErrorMessage(error),
+			data: null
+		};
+	}
 };

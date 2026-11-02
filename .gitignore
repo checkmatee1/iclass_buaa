@@ -11,6 +11,8 @@ client/dist/
 # Env config
 .env
 .env.local
+.env.*
+!.env.example
 
 # Editor files
 .vscode/*

@@ -168,8 +168,7 @@ export const getMergedCourseDetailsForFrontend = async (
 
 export const signNowForFrontend = async (
 	client: IClassClient,
-	courseSchedId: string,
-	timestamp: number
+	courseSchedId: string
 ): Promise<ServiceResult<any>> => {
 	if (!courseSchedId) {
 		return {
@@ -181,7 +180,7 @@ export const signNowForFrontend = async (
 	}
 
 	try {
-		const signResult = await client.signNow(courseSchedId, timestamp);
+		const signResult = await client.signNow(courseSchedId);
 		return {
 			ok: true,
 			code: 'OK',

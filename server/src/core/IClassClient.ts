@@ -122,7 +122,7 @@ export class IClassClient {
     }
 
 
-    async signNow(courseSchedId: string, timestamp: number): Promise<any> {
+    async signNow(courseSchedId: string): Promise<any> {
         const userId = this.userInfo?.id;
         const sessionId = this.sessionId;
         if (!userId || !sessionId) {
@@ -134,8 +134,7 @@ export class IClassClient {
             this.useVpn,
             String(userId),
             sessionId,
-            courseSchedId,
-            timestamp
+            courseSchedId
         );
     }
 }

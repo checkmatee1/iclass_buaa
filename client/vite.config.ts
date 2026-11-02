@@ -9,7 +9,9 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    host: '127.0.0.1',
     port: 4000,
+    allowedHosts: ['bh.xjcpp.love'],
     open: true,
     proxy: {
       '/api': {

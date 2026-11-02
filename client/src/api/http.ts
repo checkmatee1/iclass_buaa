@@ -1,8 +1,8 @@
 import axios from "axios";
 import { getToken } from "../utils/session";
 
-// 在 Electron 生产环境中，没有 Vite proxy 代理，必须请求以启动的本地后端服务
-const defaultBaseUrl = import.meta.env.PROD ? "http://127.0.0.1:3000" : "";
+// Keep browser requests same-origin so the local reverse proxy can reach the API.
+const defaultBaseUrl = "";
 
 export const http = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || defaultBaseUrl,

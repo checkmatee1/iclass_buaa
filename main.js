@@ -38,8 +38,8 @@ function createWindow() {
         height: 800,
         icon: iconPath,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true
         }
     });
 

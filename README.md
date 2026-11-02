@@ -21,34 +21,64 @@ PR 链接： https://github.com/zeroduhyy/iclass_buaa/pull/20
 
 *注：原先的 Python 版本代码已迁移至 `python` 分支，全新版本请参考当前分支。*
 
-### 1. 一键式部署 (本地运行)
+### 1. macOS 本地运行
 
 在项目根目录下运行以下脚本命令，会自动安装相关依赖：
 
-**Windows 环境:**
+在 macOS 终端中执行：
+
+```cmd
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+```
+
+脚本会安装根目录、客户端和服务端依赖，并可直接启动浏览器开发页面。
+
+也可以手动执行：
+
+```bash
+npm install
+cd client && npm install && cd ..
+cd server && npm install && cd ..
+npm run dev
+```
+
+`npm run dev` 会同时启动本地后端和 Vite 前端。启动后在浏览器访问 `http://127.0.0.1:4000`。
+
+如需配置默认 VPN 用户，复制 `.env.example` 为 `.env`，填写以下变量：
+
+```env
+ICLASS_DEFAULT_STUDENT_ID=
+ICLASS_DEFAULT_VPN_USERNAME=
+ICLASS_DEFAULT_VPN_PASSWORD=
+```
+
+配置完成后，打开登录页会优先尝试默认 VPN 登录；未配置或登录失败时仍可手动登录。
+
+配置了上述默认 VPN 用户后，Docker 后端会自动启用后台签到，无需保持浏览器打开：
+
+- 每分钟刷新当天课程；
+- 每门课程上课前 20 分钟开始尝试签到；
+- 每 10 秒尝试一次，签到成功后立即停止；
+- 网络或登录会话失效后自动重新登录；
+- 到课程结束时间仍未成功时停止，并在 Docker 日志中记录失败；
+- Docker 服务重启后会重新读取 `.env` 并恢复调度。
+
+可在 `.env` 中设置 `AUTO_SIGN_ENABLED=false` 临时关闭自动签到。运行状态可通过后端 `/api/health` 的 `data.autoSign` 字段查看。
+
+### 2. Windows 本地运行
+
 ```cmd
 ./scripts/setup.bat
 ```
 
-**Linux / Mac 环境:**
-```bash
-./scripts/setup.sh
-```
-*运行成功后会自动打开客户端界面，即可访问并使用。*
+### 3. 构建检查
 
-### 2. 打包生成 Windows 软件 (.exe)
-
-项目目前已配置为仅打包 Windows 版本。如需生成独立的可执行程序，可在项目根目录下运行以下命令：
+当前项目只通过浏览器运行，不提供桌面窗口或安装包。需要检查前端和服务端构建时运行：
 
 ```bash
-npm run build:win
+npm run build
 ```
-*提示：编译打包完成后，生成的免安装绿色版及 `.exe` 安装程序将自动输出在项目根目录的 `dist_exe` 文件夹中。*
-
-### 🎨 附：修改应用图标
-
-如果需要更换打包生成软件的图标，请直接替换/覆盖项目根目录下的对应文件：
-- `icon.ico`（替换为你自己的 Windows 图标文件，保持名字不变即可）
 
 ---
 

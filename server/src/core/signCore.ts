@@ -1,5 +1,6 @@
 import type { Got } from 'got';
 import { ICLASS_URLS } from '../config/constants';
+import logger from '../utils/logger';
 
 const parseJsonSafe = (body: unknown): any | null => {
     if (body && typeof body === 'object') {
@@ -27,22 +28,35 @@ export const signNow = async (
     useVpn: boolean,
     userId: string,
     sessionId: string,
-    courseSchedId: string,
-    timestamp: number
+    courseSchedId: string
 ): Promise<any> => {
+    const network = useVpn ? 'VPN' : 'DIRECT';
+    const timestampUrl = ICLASS_URLS[network].SIGN_TIMESTAMP;
     const signUrl = buildScanSignUrl(useVpn);
-
-    const baseParams = {
-        id: userId,
-        courseSchedId,
-        timestamp: String(timestamp)
-    };
 
     const commonHeaders = {
         sessionId,
         Accept: 'application/json',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'User-Agent': 'Mozilla/5.0 (Linux; Android 13; M2012K11AC Build/TKQ1.221114.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36 wxwork/4.1.30 MicroMessenger/7.0.1 Language/zh'
+    };
+
+    const timestampRes = await client.post(timestampUrl, {
+        searchParams: { id: userId },
+        headers: commonHeaders,
+        followRedirect: false,
+        throwHttpErrors: false
+    });
+    const timestampPayload = parseJsonSafe(timestampRes.body);
+    const timestamp = Number(timestampPayload?.timestamp);
+    if (timestampRes.statusCode !== 200 || !Number.isFinite(timestamp)) {
+        throw new Error(`获取签到时间戳失败（HTTP=${timestampRes.statusCode}）`);
+    }
+
+    const baseParams = {
+        id: userId,
+        courseSchedId,
+        timestamp: String(timestamp)
     };
 
     const res = await client.post(signUrl, {
@@ -53,8 +67,28 @@ export const signNow = async (
     });
 
     const parsedResult = parseJsonSafe(res.body);
+    const diagnostics = {
+        mode: useVpn ? 'WEBVPN' : 'DIRECT',
+        endpoint: new URL(signUrl).pathname,
+        httpStatus: res.statusCode,
+        requestTimestamp: timestamp,
+        requestTime: new Date(timestamp).toISOString(),
+        timestampSource: new URL(timestampUrl).pathname,
+        responseDate: res.headers.date ?? null,
+        responseContentType: res.headers['content-type'] ?? null
+    };
+
+    logger.info(`[sign] ${JSON.stringify({
+        ...diagnostics,
+        schoolStatus: parsedResult?.STATUS ?? null,
+        schoolMessage: parsedResult?.ERRMSG ?? null
+    })}`);
+
     if (parsedResult !== null) {
-        return parsedResult;
+        return {
+            ...parsedResult,
+            diagnostics
+        };
     }
 
     return {
@@ -62,6 +96,7 @@ export const signNow = async (
         ERRMSG: '签到接口返回非 JSON',
         statusCode: res.statusCode,
         location: res.headers.location ?? null,
-        raw: String(res.body).slice(0, 200)
+        raw: String(res.body).slice(0, 200),
+        diagnostics
     };
 };

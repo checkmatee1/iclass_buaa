@@ -97,12 +97,17 @@ export const fetchUserInfoFromApi = async (
         if (Number.isFinite(serverMs)) {
             // 偏移量 = 服务器时间 - 本地时间
             const rawServerTimeOffset = serverMs - localMs;
+            // WebVPN's Date header can be several seconds ahead of the iClass
+            // backend. Never let that produce a future sign-in timestamp.
             serverTimeOffset = useVpn
-                ? rawServerTimeOffset + VPN_OFFSET_CORRECTION_MS
+                ? Math.min(
+                    rawServerTimeOffset + VPN_OFFSET_CORRECTION_MS,
+                    VPN_OFFSET_CORRECTION_MS
+                )
                 : rawServerTimeOffset;
             logger.info(
                 useVpn
-                    ? `Time sync: raw server offset=${rawServerTimeOffset}ms, vpn correction=${VPN_OFFSET_CORRECTION_MS}ms, applied offset=${serverTimeOffset}ms`
+                    ? `Time sync: raw server offset=${rawServerTimeOffset}ms, vpn correction=${VPN_OFFSET_CORRECTION_MS}ms, applied/clamped offset=${serverTimeOffset}ms`
                     : `Time sync: Server offset is ${serverTimeOffset}ms`
             );
         } else {

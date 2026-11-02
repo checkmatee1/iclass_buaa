@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { SubmitEventHandler } from "react";
 import { useNavigate } from "react-router-dom";
-import { defaultLogin, login } from "../api/auth";
+import { defaultLogin, login, submitCaptcha } from "../api/auth";
+import type { ApiResponse, LoginOutcome, CaptchaChallenge } from "../types/api";
 import { setSession } from "../utils/session";
 
 const LoginStudentPage = () => {
@@ -9,59 +10,54 @@ const LoginStudentPage = () => {
     const [studentId, setStudentId] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
-    const [loginMode, setLoginMode] = useState<"direct" | "vpn" | "default" | null>(null);
+    const [loginMode, setLoginMode] = useState<"direct" | "vpn" | "default" | "captcha" | null>(null);
     const [error, setError] = useState("");
 
+    const [challenge, setChallenge] = useState<CaptchaChallenge | null>(null);
+    const [captcha, setCaptcha] = useState("");
+
+    const acceptResult = (res: ApiResponse<LoginOutcome>, useVpn: boolean) => {
+        if (res.code === "CAPTCHA_REQUIRED" && res.data && "challengeId" in res.data) {
+            setChallenge(res.data);
+            setPassword("");
+            setCaptcha("");
+            setError(res.message);
+            return;
+        }
+        if (!res.ok || !res.data || !("token" in res.data)) {
+            setError(res.message || "登录失败，请重试");
+            // A submission consumes its challenge. Restart on all terminal failures.
+            if (res.code !== "REQUEST_FAILED" && res.code !== "INVALID_PARAM") setChallenge(null);
+            return;
+        }
+        setPassword("");
+        setChallenge(null);
+        setSession(res.data.token, res.data.userId, res.data.userName, useVpn);
+        navigate("/calendar", { replace: true });
+    };
     const handleDefaultLogin = async () => {
         setLoginMode("default");
         setError("");
-        try {
-            const res = await defaultLogin();
-            if (!res.ok || !res.data) {
-                setError(res.message || "默认 VPN 登录失败");
-                return;
-            }
-            setSession(res.data.token, res.data.userId, res.data.userName, true);
-            navigate("/calendar", { replace: true });
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "默认 VPN 登录失败");
-        } finally {
-            setLoginMode(null);
-        }
+        try { acceptResult(await defaultLogin(), true); }
+        finally { setLoginMode(null); }
     };
-
     const performLogin = async (useVpn: boolean) => {
-        if (!studentId.trim()) {
-            setError("请输入学号");
+        if (!studentId.trim() || !password) {
+            setError("请输入学号和统一认证密码");
             return;
         }
-        if (!password) {
-            setError("请输入统一认证密码");
-            return;
-        }
-
-        const mode = useVpn ? "vpn" : "direct";
-        setLoginMode(mode);
+        setLoginMode(useVpn ? "vpn" : "direct");
         setError("");
-        try {
-            const res = await login({
-                studentId: studentId.trim(),
-                password,
-                useVpn
-            });
-
-            if (!res.ok || !res.data) {
-                setError(res.message || `${useVpn ? "VPN" : "直连"}登录失败`);
-                return;
-            }
-
-            setSession(res.data.token, res.data.userId, res.data.userName, useVpn);
-            navigate("/calendar", { replace: true });
-        } catch (err) {
-            setError(err instanceof Error ? err.message : `${useVpn ? "VPN" : "直连"}登录失败`);
-        } finally {
-            setLoginMode(null);
-        }
+        try { acceptResult(await login({studentId: studentId.trim(), password, useVpn}), useVpn); }
+        finally { setLoginMode(null); }
+    };
+    const handleCaptcha = async (refresh = false) => {
+        if (!challenge) return;
+        if (!refresh && !captcha.trim()) { setError("请输入图片验证码"); return; }
+        setLoginMode("captcha");
+        setError("");
+        try { acceptResult(await submitCaptcha(challenge.challengeId, captcha, refresh), challenge.useVpn); }
+        finally { setLoginMode(null); }
     };
 
     const handleDirectLogin: SubmitEventHandler<HTMLFormElement> = (event) => {
@@ -78,6 +74,7 @@ const LoginStudentPage = () => {
                     <p className="hint auth-subtitle">直连和 WebVPN 使用同一组统一认证账号密码</p>
                 </div>
 
+                {!challenge && <>
                 <button type="button" className="secondary" onClick={() => void handleDefaultLogin()} disabled={loginMode !== null}>
                     {loginMode === "default" ? "登录中..." : "登录我的账号"}
                 </button>
@@ -134,8 +131,25 @@ const LoginStudentPage = () => {
                         </button>
                     </div>
                 </form>
+                </>}
+                {challenge && (
+                    <form className="stack auth-form" onSubmit={(event) => { event.preventDefault(); void handleCaptcha(); }}>
+                        <p className="hint">学校要求图片验证。完成后{challenge.isDefault ? "后台自动签到将复用本次登录" : "继续登录"}。</p>
+                        <img className="captcha-image" src={challenge.image} alt="学校登录图片验证码" />
+                        <label htmlFor="captcha">图片验证码</label>
+                        <input id="captcha" value={captcha} onChange={(event) => setCaptcha(event.target.value)}
+                            autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={32} autoFocus />
+                        <p className="hint">验证码约 5 分钟内有效，过期后请重新登录。</p>
+                        <div className="actions auth-actions">
+                            <button type="button" className="secondary" onClick={() => void handleCaptcha(true)} disabled={loginMode !== null}>换一张</button>
+                            <button type="submit" disabled={loginMode !== null}>{loginMode === "captcha" ? "处理中..." : "验证并登录"}</button>
+                        </div>
+                        <button type="button" className="secondary" disabled={loginMode !== null}
+                            onClick={() => { setChallenge(null); setCaptcha(""); setError(""); }}>返回登录</button>
+                    </form>
+                )}
 
-                {error && <p className="error-text">{error}</p>}
+                {error && <p className="error-text" role="status">{error}</p>}
             </section>
         </main>
     );

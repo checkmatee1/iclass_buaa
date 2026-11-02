@@ -1,6 +1,6 @@
 import got, { Got } from 'got';
 import { CookieJar } from 'tough-cookie';
-import { ssoLogin } from './authCore';
+import { ssoLogin, AuthFlowError, type SsoAttempt } from './authCore';
 import { CourseDetailItem, CourseItem, getCourseByDate as getCourseByDateCore, getCourses, getCoursesDetail, getCurrentSemester } from './courseCore';
 import { getServerTimestamp, signNow as signNowOnline } from './signCore';
 import { fetchUserInfoFromApi, resolveIclassLoginName } from './userCore';
@@ -26,11 +26,22 @@ export class IClassClient {
             https: {
                 rejectUnauthorized: true
             },
+            hooks: { afterResponse: [(response) => {
+                const headers = response.request.options.headers;
+                if (headers.sessionid) {
+                    const body = typeof response.body === 'string' ? response.body : '';
+                    if ([401, 403].includes(response.statusCode) ||
+                        /<input[^>]+name=["'](?:execution|password)["']|<title[^>]*>\s*CAS Login/i.test(body)) {
+                        throw new AuthFlowError('SESSION_EXPIRED', '学校登录会话已过期，请重新验证');
+                    }
+                }
+                return response;
+            }] },
             throwHttpErrors: false
         });
     }
 
-    async login(input: IClassLoginInput): Promise<void> {
+    async login(input: IClassLoginInput, attempt?: SsoAttempt): Promise<void> {
         const studentId = String(input.studentId ?? '').trim();
         const password = String(input.password ?? '');
 
@@ -42,7 +53,7 @@ export class IClassClient {
             throw new Error('请输入统一认证密码');
         }
 
-        await ssoLogin(this.client, studentId, password, this.useVpn);
+        await ssoLogin(this.client, studentId, password, this.useVpn, attempt);
         const loginName = await resolveIclassLoginName(this.client, this.useVpn);
         if (!loginName) {
             throw new Error('无法从 iClass 跳转解析 loginName');

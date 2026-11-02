@@ -4,6 +4,10 @@ import { URL } from 'url';
 import type { CourseItem } from '../core/courseCore';
 import {
 	loginAndBuildContext,
+	getDefaultLoginContext,
+	continueCaptchaLogin,
+	CaptchaChallengeError,
+	safeAuthError,
 	LoginContext,
 	LoginInput,
 	ServiceResult as AuthServiceResult
@@ -48,6 +52,7 @@ const setCorsHeaders = (req: IncomingMessage, res: ServerResponse): void => {
 const sendJson = (res: ServerResponse, statusCode: number, payload: AnyServiceResult | Record<string, unknown>): void => {
 	res.statusCode = statusCode;
 	res.setHeader('Content-Type', 'application/json; charset=utf-8');
+	res.setHeader('Cache-Control', 'no-store');
 	res.end(JSON.stringify(payload));
 };
 
@@ -68,7 +73,7 @@ const readJsonBody = async (req: IncomingMessage): Promise<any> => {
 	try {
 		return JSON.parse(raw);
 	} catch {
-		throw new Error(`请求体不是有效 JSON，raw=${raw.slice(0, 200)}`);
+		throw new Error('请求体不是有效 JSON');
 	}
 };
 
@@ -111,128 +116,50 @@ const unauthorized = (res: ServerResponse): void => {
 	});
 };
 
-const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-	let body: any;
-	try {
-		body = await readJsonBody(req);
-	} catch (error) {
-		const reason = error instanceof Error ? error.message : String(error);
-		logger.warn(`[login] 请求体解析失败: ${reason}`);
-		sendJson(res, 400, {
-			ok: false,
-			code: 'INVALID_JSON',
-			message: '请求体必须是合法 JSON',
-			data: null
-		});
-		return;
-	}
-
-	const bodyKeys = body && typeof body === 'object' ? Object.keys(body).join(',') : '';
-	logger.info(`[login] 收到请求 content-type=${String(req.headers['content-type'] ?? '')}, keys=[${bodyKeys}]`);
-
-	const studentId = String(body?.studentId ?? '').trim();
-	const password = String(body?.password ?? '');
-	const useVpn = parseBool(body?.useVpn, false);
-
-	if (!studentId || !password) {
-		logger.warn(`[login] 参数缺失: studentIdPresent=${Boolean(studentId)}, passwordPresent=${Boolean(password)}, bodyKeys=[${bodyKeys}]`);
-		sendJson(res, 400, {
-			ok: false,
-			code: 'INVALID_PARAM',
-			message: !studentId ? '学号不能为空' : '请输入统一认证密码',
-			data: null
-		});
-		return;
-	}
-
-
-
-	const input: LoginInput = {
-		studentId,
-		password,
-		useVpn
-	};
-
-	logger.info(`[login] 参数校验通过: studentId=${studentId}, useVpn=${input.useVpn}`);
-
-	try {
-		const context = await loginAndBuildContext(input);
-		const token = randomUUID();
-		for (const [existingToken, state] of sessions) {
-			if (state.context.studentId === context.studentId && state.context.useVpn === context.useVpn) {
-				sessions.delete(existingToken);
-			}
-		}
-		sessions.set(token, { context, courses: [] });
-		logger.info(`[login] 登录成功: userId=${context.userId}, userName=${context.userName}, token=${token.slice(0, 8)}...`);
-
-		sendJson(res, 200, {
-			ok: true,
-			code: 'OK',
-			message: '登录成功',
-			data: {
-				token,
-				userId: context.userId,
-				userName: context.userName
-			}
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : '登录失败';
-		logger.warn(`[login] 登录失败: ${message}`);
-		sendJson(res, 401, {
-			ok: false,
-			code: 'AUTH_FAILED',
-			message,
-			data: null
-		});
-	}
+const sendAuthFailure = (res: ServerResponse, error: unknown): void => {
+    if (error instanceof CaptchaChallengeError) {
+        sendJson(res, 200, {ok: false, code: error.code, message: error.message, data: error.challenge});
+        return;
+    }
+    const failure = safeAuthError(error);
+    const status = failure.code === 'INVALID_PARAM' ? 400 : failure.code === 'CAPTCHA_EXPIRED' ? 410 : 401;
+    sendJson(res, status, {ok: false, code: failure.code, message: failure.message, data: null});
 };
-
+const sendAuthenticated = (res: ServerResponse, context: LoginContext): void => {
+    const existing = [...sessions].find(([, state]) => state.context === context);
+    const token = existing?.[0] ?? randomUUID();
+    for (const [key, state] of sessions) {
+        if (state.context.studentId === context.studentId && state.context.useVpn === context.useVpn && key !== token) sessions.delete(key);
+    }
+    sessions.set(token, {context, courses: []});
+    sendJson(res, 200, {ok: true, code: 'OK', message: '登录成功',
+        data: {token, userId: context.userId, userName: context.userName}});
+};
+const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    let body: any;
+    try { body = await readJsonBody(req); }
+    catch { sendJson(res, 400, {ok: false, code: 'INVALID_JSON', message: '请求体必须是合法 JSON', data: null}); return; }
+    const studentId = String(body?.studentId ?? '').trim();
+    const password = String(body?.password ?? '');
+    const useVpn = parseBool(body?.useVpn, false);
+    if (!studentId || !password) {
+        sendJson(res, 400, {ok: false, code: 'INVALID_PARAM', message: '请输入学号和统一认证密码', data: null}); return;
+    }
+    try { sendAuthenticated(res, await loginAndBuildContext({studentId, password, useVpn})); }
+    catch (error) { sendAuthFailure(res, error); }
+};
 const handleDefaultLogin = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
-	const studentId = String(process.env.ICLASS_DEFAULT_STUDENT_ID ?? '').trim();
-	const vpnUsername = String(process.env.ICLASS_DEFAULT_VPN_USERNAME ?? '').trim();
-	const vpnPassword = String(process.env.ICLASS_DEFAULT_VPN_PASSWORD ?? '');
-
-	if (!studentId || !vpnUsername || !vpnPassword) {
-		sendJson(res, 404, {
-			ok: false,
-			code: 'DEFAULT_LOGIN_NOT_CONFIGURED',
-			message: '未配置默认 VPN 用户',
-			data: null
-		});
-		return;
-	}
-
-	try {
-		const context = await loginAndBuildContext({
-			studentId,
-			useVpn: true,
-			username: vpnUsername,
-			password: vpnPassword
-		});
-		const token = randomUUID();
-		sessions.set(token, { context, courses: [] });
-
-		sendJson(res, 200, {
-			ok: true,
-			code: 'OK',
-			message: '默认 VPN 登录成功',
-			data: {
-				token,
-				userId: context.userId,
-				userName: context.userName
-			}
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : '默认 VPN 登录失败';
-		logger.warn(`[default-login] 登录失败: ${message}`);
-		sendJson(res, 401, {
-			ok: false,
-			code: 'AUTH_FAILED',
-			message: '默认 VPN 登录失败，请使用手动登录',
-			data: null
-		});
-	}
+    try { sendAuthenticated(res, await getDefaultLoginContext()); }
+    catch (error) { sendAuthFailure(res, error); }
+};
+const handleCaptcha = async (req: IncomingMessage, res: ServerResponse, refresh: boolean): Promise<void> => {
+    let body: any;
+    try { body = await readJsonBody(req); }
+    catch { sendJson(res, 400, {ok: false, code: 'INVALID_JSON', message: '请求体必须是合法 JSON', data: null}); return; }
+    try {
+        const result = await continueCaptchaLogin(String(body?.challengeId ?? ''), String(body?.captcha ?? ''), refresh);
+        sendAuthenticated(res, result.context);
+    } catch (error) { sendAuthFailure(res, error); }
 };
 
 const handleCourses = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -381,6 +308,10 @@ export const startApiServer = (port: number = DEFAULT_API_PORT, options: ApiServ
 				return;
 			}
 
+            if (method === 'POST' && (path === '/api/login/captcha' || path === '/api/login/captcha/refresh')) {
+                await handleCaptcha(req, res, path.endsWith('/refresh'));
+                return;
+            }
 			if (method === 'POST' && path === '/api/default-login') {
 				await handleDefaultLogin(req, res);
 				return;

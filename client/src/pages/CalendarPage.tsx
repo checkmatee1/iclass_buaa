@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
+import { http } from "../api/http";
 import { logout } from "../api/auth";
 import { fetchCourseDetails, generateSignQr, signNow as signCourse } from "../api/course";
 import type { CourseDetailItem } from "../types/api";
@@ -77,6 +78,20 @@ const buildSignFailMessage = (message: string, data: unknown): string => {
 };
 
 const CalendarPage = () => {
+    const [verificationNeeded, setVerificationNeeded] = useState(false);
+    useEffect(() => {
+        let active = true;
+        const update = async () => {
+            try {
+                const res = await http.get("/api/health");
+                if (active) setVerificationNeeded(res.data?.data?.autoSign?.needsHumanVerification === true);
+            } catch { /* Keep the last known status during a transient network failure. */ }
+        };
+        void update();
+        const timer = setInterval(() => void update(), 15000);
+        return () => { active = false; clearInterval(timer); };
+    }, []);
+
     const navigate = useNavigate();
     const [weekOffset, setWeekOffset] = useState(0);
     const [selectedCourse, setSelectedCourse] = useState<CourseDetailItem | null>(null);
@@ -319,6 +334,10 @@ const CalendarPage = () => {
                 </div>
             </header>
 
+            {verificationNeeded && <div role="status" className="card">
+                <p>后台自动签到已暂停，需要完成学校登录验证。</p>
+                <a href="#/login">前往登录并验证</a>
+            </div>}
             <section className="week-nav card">
                 <button onClick={() => setWeekOffset((v) => v - 1)}>上一周</button>
                 <strong>{weekRangeLabel}</strong>

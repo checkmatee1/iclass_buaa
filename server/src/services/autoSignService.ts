@@ -1,5 +1,6 @@
 import type { CourseDetailItem } from '../core/courseCore';
-import { loginAndBuildContext, type LoginContext } from './authService';
+import { getDefaultLoginContext, peekDefaultLoginContext, invalidateDefaultLoginContext, type LoginContext } from './authService';
+import { AuthFlowError } from '../core/authCore';
 import logger from '../utils/logger';
 
 const BEIJING_TIME_ZONE = 'Asia/Shanghai';
@@ -7,7 +8,6 @@ const DEFAULT_LEAD_TIME_MS = 20 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 10 * 1000;
 const DEFAULT_SCHEDULE_REFRESH_MS = 60 * 1000;
 const DEFAULT_LOGIN_RETRY_MS = 60 * 1000;
-const DEFAULT_SESSION_REFRESH_MS = 6 * 60 * 60 * 1000;
 const MIN_TIMER_INTERVAL_MS = 1000;
 
 type CourseState = 'waiting' | 'polling' | 'success' | 'expired';
@@ -24,6 +24,7 @@ export interface AutoSignServiceStatus {
     enabled: boolean;
     running: boolean;
     authenticated: boolean;
+    needsHumanVerification: boolean;
     scheduleDate: string | null;
     trackedCourses: number;
     pollingCourses: number;
@@ -48,7 +49,6 @@ interface AutoSignConfig {
     pollIntervalMs: number;
     scheduleRefreshMs: number;
     loginRetryMs: number;
-    sessionRefreshMs: number;
 }
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
@@ -85,8 +85,7 @@ const readConfig = (): AutoSignConfig => {
         leadTimeMs: parsePositiveInteger(process.env.AUTO_SIGN_LEAD_TIME_MS, DEFAULT_LEAD_TIME_MS),
         pollIntervalMs: parsePositiveInteger(process.env.AUTO_SIGN_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS),
         scheduleRefreshMs: parsePositiveInteger(process.env.AUTO_SIGN_SCHEDULE_REFRESH_MS, DEFAULT_SCHEDULE_REFRESH_MS),
-        loginRetryMs: parsePositiveInteger(process.env.AUTO_SIGN_LOGIN_RETRY_MS, DEFAULT_LOGIN_RETRY_MS),
-        sessionRefreshMs: parsePositiveInteger(process.env.AUTO_SIGN_SESSION_REFRESH_MS, DEFAULT_SESSION_REFRESH_MS)
+        loginRetryMs: parsePositiveInteger(process.env.AUTO_SIGN_LOGIN_RETRY_MS, DEFAULT_LOGIN_RETRY_MS)
     };
 };
 
@@ -149,7 +148,7 @@ const normalizeError = (error: unknown): string => {
 
 const isAuthenticationFailure = (result: any): boolean => {
     const message = `${String(result?.ERRMSG ?? '')} ${String(result?.message ?? '')}`.toLowerCase();
-    return ['登录', '未登录', '会话', 'session', '认证', '过期', 'unauthorized'].some((keyword) => message.includes(keyword));
+    return ['登录', '未登录', '会话', 'session', '认证', '过期', 'unauthorized', '401', '403'].some((keyword) => message.includes(keyword));
 };
 
 class DefaultAutoSignService implements AutoSignService {
@@ -158,7 +157,7 @@ class DefaultAutoSignService implements AutoSignService {
     private timer: NodeJS.Timeout | null = null;
     private tickInFlight = false;
     private context: LoginContext | null = null;
-    private loginAt = 0;
+    private needsHumanVerification = false;
     private nextLoginAttemptAt = 0;
     private scheduleDate: string | null = null;
     private lastScheduleRefreshAt = 0;
@@ -204,6 +203,7 @@ class DefaultAutoSignService implements AutoSignService {
             enabled: this.config.enabled,
             running: this.timer !== null,
             authenticated: this.context !== null,
+            needsHumanVerification: this.needsHumanVerification,
             scheduleDate: this.scheduleDate,
             trackedCourses: tracked.length,
             pollingCourses: tracked.filter((item) => item.state === 'polling').length,
@@ -259,31 +259,29 @@ class DefaultAutoSignService implements AutoSignService {
     }
 
     private async ensureContext(now: number): Promise<LoginContext | null> {
-        if (this.context && now - this.loginAt < this.config.sessionRefreshMs) {
-            return this.context;
+        const shared = peekDefaultLoginContext();
+        if (shared && shared !== this.context) {
+            this.context = shared;
+            this.needsHumanVerification = false;
+            this.lastError = null;
+            this.lastScheduleRefreshAt = 0;
         }
-        if (now < this.nextLoginAttemptAt) {
-            return null;
-        }
-
+        if (this.context) return this.context;
+        if (this.needsHumanVerification || now < this.nextLoginAttemptAt) return null;
         try {
-            logger.info('[auto-sign] logging in with configured VPN account');
-            this.context = await loginAndBuildContext({
-                studentId: this.config.studentId,
-                useVpn: true,
-                username: this.config.vpnUsername,
-                password: this.config.vpnPassword
-            });
-            this.loginAt = Date.now();
+            this.context = await getDefaultLoginContext();
             this.nextLoginAttemptAt = 0;
             this.lastError = null;
-            logger.info(`[auto-sign] login succeeded for userId=${this.context.userId}`);
             return this.context;
         } catch (error) {
             this.context = null;
             this.lastError = normalizeError(error);
+            this.needsHumanVerification = error instanceof AuthFlowError &&
+                ['CAPTCHA_REQUIRED', 'CREDENTIALS_REJECTED', 'AUTH_PAGE_CHANGED', 'AUTH_FAILED'].includes(error.code);
             this.nextLoginAttemptAt = Date.now() + this.config.loginRetryMs;
-            logger.error(`[auto-sign] login failed; retrying later: ${this.lastError}`);
+            logger.warn(this.needsHumanVerification
+                ? '[auto-sign] paused; open login page to complete school verification'
+                : '[auto-sign] school request unavailable; retrying later');
             return null;
         }
     }
@@ -323,7 +321,8 @@ class DefaultAutoSignService implements AutoSignService {
         } catch (error) {
             this.lastError = normalizeError(error);
             logger.warn(`[auto-sign] schedule refresh failed: ${this.lastError}`);
-            this.invalidateContext();
+            if (isAuthenticationFailure({message: this.lastError})) this.invalidateContext();
+            else this.lastScheduleRefreshAt = now;
         }
     }
 
@@ -385,15 +384,15 @@ class DefaultAutoSignService implements AutoSignService {
         } catch (error) {
             this.lastError = normalizeError(error);
             logger.warn(`[auto-sign] sign request failed course=${tracked.course.name} sched=${tracked.course.courseSchedId}: ${this.lastError}`);
-            this.invalidateContext();
+            if (isAuthenticationFailure({message: this.lastError})) this.invalidateContext();
         } finally {
             tracked.inFlight = false;
         }
     }
 
     private invalidateContext(): void {
+        invalidateDefaultLoginContext(this.context);
         this.context = null;
-        this.loginAt = 0;
         this.nextLoginAttemptAt = 0;
     }
 }

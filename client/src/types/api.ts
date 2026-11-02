@@ -44,3 +44,12 @@ export interface SignQrData {
     courseSchedId: string;
     timestamp: number;
 }
+
+export interface CaptchaChallenge {
+    challengeId: string;
+    image: string;
+    expiresAt: number;
+    useVpn: boolean;
+    isDefault: boolean;
+}
+export type LoginOutcome = LoginData | CaptchaChallenge;

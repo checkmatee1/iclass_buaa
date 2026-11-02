@@ -5,6 +5,7 @@ import type { CourseItem } from '../core/courseCore';
 import {
 	loginAndBuildContext,
 	getDefaultLoginContext,
+	peekDefaultLoginContext,
 	continueCaptchaLogin,
 	CaptchaChallengeError,
 	safeAuthError,
@@ -180,7 +181,7 @@ const handleCourses = async (req: IncomingMessage, res: ServerResponse): Promise
 	sendJson(res, 400, result);
 };
 
-const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse, onDefaultScheduleReload?: () => void): Promise<void> => {
 	const token = extractToken(req);
 	const state = sessions.get(token);
 	if (!state) {
@@ -199,6 +200,7 @@ const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse): P
 	}
 
 	const result = await getMergedCourseDetailsForFrontend(state.context.client, state.courses, 7);
+	if (result.ok && state.context === peekDefaultLoginContext()) onDefaultScheduleReload?.();
 	sendJson(res, result.ok ? 200 : 400, result);
 };
 
@@ -273,6 +275,7 @@ const handleLogout = async (req: IncomingMessage, res: ServerResponse): Promise<
 
 export interface ApiServerOptions {
 	getAutoSignStatus?: () => AutoSignServiceStatus;
+	onDefaultScheduleReload?: () => void;
 }
 
 export const startApiServer = (port: number = DEFAULT_API_PORT, options: ApiServerOptions = {}) => {
@@ -323,7 +326,7 @@ export const startApiServer = (port: number = DEFAULT_API_PORT, options: ApiServ
 			}
 
 			if (method === 'GET' && path === '/api/course-details') {
-				await handleCourseDetails(req, res);
+				await handleCourseDetails(req, res, options.onDefaultScheduleReload);
 				return;
 			}
 

@@ -41,7 +41,8 @@ const autoSignService = createAutoSignService();
 autoSignService.start();
 
 const server = startApiServer(port, {
-    getAutoSignStatus: () => autoSignService.getStatus()
+    getAutoSignStatus: () => autoSignService.getStatus(),
+    onDefaultScheduleReload: () => autoSignService.requestScheduleRefresh()
 });
 
 const shutdown = (signal: string): void => {

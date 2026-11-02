@@ -5,8 +5,7 @@ import logger from '../utils/logger';
 
 const BEIJING_TIME_ZONE = 'Asia/Shanghai';
 const DEFAULT_LEAD_TIME_MS = 20 * 60 * 1000;
-const DEFAULT_POLL_INTERVAL_MS = 10 * 1000;
-const DEFAULT_SCHEDULE_REFRESH_MS = 60 * 1000;
+const DEFAULT_POLL_INTERVAL_MS = 60 * 1000;
 const DEFAULT_LOGIN_RETRY_MS = 60 * 1000;
 const MIN_TIMER_INTERVAL_MS = 1000;
 
@@ -38,6 +37,7 @@ export interface AutoSignService {
     start(): void;
     stop(): void;
     getStatus(): AutoSignServiceStatus;
+    requestScheduleRefresh(): void;
 }
 
 interface AutoSignConfig {
@@ -47,7 +47,6 @@ interface AutoSignConfig {
     vpnPassword: string;
     leadTimeMs: number;
     pollIntervalMs: number;
-    scheduleRefreshMs: number;
     loginRetryMs: number;
 }
 
@@ -84,7 +83,6 @@ const readConfig = (): AutoSignConfig => {
         vpnPassword,
         leadTimeMs: parsePositiveInteger(process.env.AUTO_SIGN_LEAD_TIME_MS, DEFAULT_LEAD_TIME_MS),
         pollIntervalMs: parsePositiveInteger(process.env.AUTO_SIGN_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS),
-        scheduleRefreshMs: parsePositiveInteger(process.env.AUTO_SIGN_SCHEDULE_REFRESH_MS, DEFAULT_SCHEDULE_REFRESH_MS),
         loginRetryMs: parsePositiveInteger(process.env.AUTO_SIGN_LOGIN_RETRY_MS, DEFAULT_LOGIN_RETRY_MS)
     };
 };
@@ -161,6 +159,9 @@ class DefaultAutoSignService implements AutoSignService {
     private nextLoginAttemptAt = 0;
     private scheduleDate: string | null = null;
     private lastScheduleRefreshAt = 0;
+    private scheduleRevision = 0;
+    private loadedScheduleRevision = -1;
+    private nextScheduleAttemptAt = 0;
     private lastError: string | null = null;
 
     start(): void {
@@ -181,9 +182,9 @@ class DefaultAutoSignService implements AutoSignService {
 
         const timerInterval = Math.max(
             MIN_TIMER_INTERVAL_MS,
-            Math.min(this.config.pollIntervalMs, this.config.scheduleRefreshMs)
+            Math.min(this.config.pollIntervalMs, this.config.loginRetryMs)
         );
-        logger.info(`[auto-sign] started lead=${this.config.leadTimeMs}ms poll=${this.config.pollIntervalMs}ms refresh=${this.config.scheduleRefreshMs}ms`);
+        logger.info(`[auto-sign] started lead=${this.config.leadTimeMs}ms poll=${this.config.pollIntervalMs}ms schedule=on-demand`);
         void this.tick();
         this.timer = setInterval(() => void this.tick(), timerInterval);
     }
@@ -195,6 +196,11 @@ class DefaultAutoSignService implements AutoSignService {
         }
         this.context = null;
         logger.info('[auto-sign] stopped');
+    }
+
+    requestScheduleRefresh(): void {
+        this.scheduleRevision += 1;
+        this.nextScheduleAttemptAt = 0;
     }
 
     getStatus(): AutoSignServiceStatus {
@@ -229,6 +235,7 @@ class DefaultAutoSignService implements AutoSignService {
                 this.scheduleDate = dateKey;
                 this.courses.clear();
                 this.lastScheduleRefreshAt = 0;
+                this.requestScheduleRefresh();
                 logger.info(`[auto-sign] new schedule date ${dateKey}`);
             }
 
@@ -237,7 +244,7 @@ class DefaultAutoSignService implements AutoSignService {
                 return;
             }
 
-            if (now - this.lastScheduleRefreshAt >= this.config.scheduleRefreshMs) {
+            if (this.loadedScheduleRevision !== this.scheduleRevision && now >= this.nextScheduleAttemptAt) {
                 await this.refreshSchedule(context, dateKey, now);
                 if (this.context !== context) {
                     return;
@@ -265,11 +272,13 @@ class DefaultAutoSignService implements AutoSignService {
             this.needsHumanVerification = false;
             this.lastError = null;
             this.lastScheduleRefreshAt = 0;
+            this.requestScheduleRefresh();
         }
         if (this.context) return this.context;
         if (this.needsHumanVerification || now < this.nextLoginAttemptAt) return null;
         try {
             this.context = await getDefaultLoginContext();
+            this.requestScheduleRefresh();
             this.nextLoginAttemptAt = 0;
             this.lastError = null;
             return this.context;
@@ -287,6 +296,7 @@ class DefaultAutoSignService implements AutoSignService {
     }
 
     private async refreshSchedule(context: LoginContext, dateKey: string, now: number): Promise<void> {
+        const revision = this.scheduleRevision;
         try {
             const details = await context.client.getCourseByDate(dateKey);
 
@@ -316,13 +326,15 @@ class DefaultAutoSignService implements AutoSignService {
             }
 
             this.lastScheduleRefreshAt = now;
+            this.loadedScheduleRevision = revision;
+            this.nextScheduleAttemptAt = 0;
             this.lastError = null;
             logger.info(`[auto-sign] schedule refreshed date=${dateKey} courses=${details.length}`);
         } catch (error) {
             this.lastError = normalizeError(error);
             logger.warn(`[auto-sign] schedule refresh failed: ${this.lastError}`);
             if (isAuthenticationFailure({message: this.lastError})) this.invalidateContext();
-            else this.lastScheduleRefreshAt = now;
+            else this.nextScheduleAttemptAt = now + this.config.loginRetryMs;
         }
     }
 

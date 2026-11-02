@@ -314,7 +314,9 @@ const CalendarPage = () => {
                     <h2>北航 iClass 日历签到</h2>
                     <p className="hint">欢迎，{user.userName || user.userId || "同学"}</p>
                 </div>
-                <button className="logout-btn" onClick={handleLogout}>退出登录</button>
+                <div className="topbar-actions">
+                    <button className="logout-btn" onClick={() => void handleLogout()}>退出登录</button>
+                </div>
             </header>
 
             <section className="week-nav card">

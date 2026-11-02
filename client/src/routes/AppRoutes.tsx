@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 import LoginStudentPage from "../pages/LoginStudentPage";
-import LoginVpnPage from "../pages/LoginVpnPage";
 import CalendarPage from "../pages/CalendarPage";
 import { getToken } from "../utils/session";
 
@@ -17,7 +16,6 @@ const AppRoutes = () => {
     return (
         <Routes>
             <Route path="/login" element={<LoginStudentPage />} />
-            <Route path="/login/vpn" element={<LoginVpnPage />} />
             <Route
                 path="/calendar"
                 element={

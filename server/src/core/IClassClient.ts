@@ -1,28 +1,25 @@
 import got, { Got } from 'got';
 import { CookieJar } from 'tough-cookie';
-import { vpnLogin } from './authCore';
+import { ssoLogin } from './authCore';
 import { CourseDetailItem, CourseItem, getCourseByDate as getCourseByDateCore, getCourses, getCoursesDetail, getCurrentSemester } from './courseCore';
-import { signNow as signNowOnline } from './signCore';
+import { getServerTimestamp, signNow as signNowOnline } from './signCore';
 import { fetchUserInfoFromApi, resolveIclassLoginName } from './userCore';
 
 export interface IClassLoginInput {
     studentId: string;
-    vpnUsername?: string;
-    vpnPassword?: string;
+    password: string;
 }
 
 export class IClassClient {
     public client: Got;
     public userInfo: any = null;
     public sessionId: string | null = null;
-    public serverTimeOffset: number = 0;
+    public loginName: string | null = null;
 
-    constructor(
-        private useVpn: boolean = false
-    ) {
-        const jar = new CookieJar();
+    constructor(private useVpn: boolean = false) {
+        const cookieJar = new CookieJar();
         this.client = got.extend({
-            cookieJar: jar,
+            cookieJar,
             timeout: {
                 request: 15000
             },
@@ -35,32 +32,31 @@ export class IClassClient {
 
     async login(input: IClassLoginInput): Promise<void> {
         const studentId = String(input.studentId ?? '').trim();
-        const vpnUsername = String(input.vpnUsername ?? '').trim();
-        const vpnPassword = String(input.vpnPassword ?? '');
+        const password = String(input.password ?? '');
 
         if (!studentId) {
             throw new Error('studentId 不能为空');
         }
 
-        if (this.useVpn) {
-            await vpnLogin(this.client, vpnUsername, vpnPassword);
-            const loginName = await resolveIclassLoginName(this.client, true);
-            if (!loginName) {
-                throw new Error('无法从 iClass 跳转解析 loginName');
-            }
-            await this.fetchUserInfo(loginName);
-            return;
+        if (!password) {
+            throw new Error('请输入统一认证密码');
         }
 
-
-        await this.fetchUserInfo(studentId);
+        await ssoLogin(this.client, studentId, password, this.useVpn);
+        const loginName = await resolveIclassLoginName(this.client, this.useVpn);
+        if (!loginName) {
+            throw new Error('无法从 iClass 跳转解析 loginName');
+        }
+        this.loginName = loginName;
+        await this.fetchUserInfo(loginName);
     }
 
     async fetchUserInfo(username: string): Promise<void> {
         const info = await fetchUserInfoFromApi(this.client, this.useVpn, username);
         this.userInfo = info.userInfo;
-        this.sessionId = info.sessionId;
-        this.serverTimeOffset = info.serverTimeOffset;
+        // The current Class API expects the transient loginName in the Sessionid
+        // header. Keep the response sessionId only as parsed response metadata.
+        this.sessionId = username;
     }
 
     async getCurrentSemester(): Promise<string | null> {
@@ -121,6 +117,21 @@ export class IClassClient {
         );
     }
 
+
+    async getSignTimestamp(): Promise<number> {
+        const userId = this.userInfo?.id;
+        const sessionId = this.sessionId;
+        if (!userId || !sessionId) {
+            throw new Error('缺少 userId 或 sessionId，请先登录并获取用户信息');
+        }
+
+        return await getServerTimestamp(
+            this.client,
+            this.useVpn,
+            String(userId),
+            sessionId
+        );
+    }
 
     async signNow(courseSchedId: string): Promise<any> {
         const userId = this.userInfo?.id;

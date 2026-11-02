@@ -3,17 +3,20 @@ import * as cheerio from 'cheerio';
 import { ICLASS_URLS, SSO_URLS } from '../config/constants';
 import logger from '../utils/logger';
 
-export const vpnLogin = async (
+export const ssoLogin = async (
     client: Got,
     username: string,
-    password: string
+    password: string,
+    useVpn: boolean
 ): Promise<void> => {
     if (!username || !password) {
         throw new Error('Username or password not provided');
     }
 
-    const entryLoginUrl = SSO_URLS.VPN_LOGIN;
-    const entryParams = {};
+    const entryLoginUrl = useVpn ? SSO_URLS.VPN_LOGIN : SSO_URLS.LOGIN;
+    const entryParams = useVpn
+        ? {}
+        : { service: ICLASS_URLS.DIRECT.LOGIN_HOME };
 
     logger.info('Fetching SSO login page...');
     const execution = await fetchExecution(client, entryLoginUrl, entryParams);
@@ -33,7 +36,7 @@ export const vpnLogin = async (
 
     logger.info(`Got execution parameter:${execution.slice(0, 20)}...`);
     const res = await submitLogin(client, entryLoginUrl, loginData, headers);
-    await handleLoginResponse(client, res);
+    await handleLoginResponse(client, res, useVpn);
 };
 
 
@@ -81,7 +84,7 @@ const submitLogin = async (
     }
 };
 
-const handleLoginResponse = async (client: Got, res: any): Promise<void> => {
+const handleLoginResponse = async (client: Got, res: any, useVpn: boolean): Promise<void> => {
     if (res.statusCode === 401) {
         logger.error('Got 401 Unauthorized - Treat as login failure by policy');
         throw new Error('登录失败：账号或密码错误，或密码过弱需先修改后再登录');
@@ -95,11 +98,11 @@ const handleLoginResponse = async (client: Got, res: any): Promise<void> => {
         }
         logger.info(`Redirecting to: ${redirectUrl}`);
         const followRes = await client.get(redirectUrl);
-        await finalizeLogin(client, followRes);
+        await finalizeLogin(client, followRes, useVpn);
         return;
     }
 
-    await finalizeLogin(client, res);
+    await finalizeLogin(client, res, useVpn);
 };
 
 const looksLikeIclassUrl = (url: string): boolean => {
@@ -130,7 +133,7 @@ const enterIclassService = async (client: Got): Promise<void> => {
     }
 };
 
-const finalizeLogin = async (client: Got, response: any): Promise<void> => {
+const finalizeLogin = async (client: Got, response: any, useVpn: boolean): Promise<void> => {
     const finalUrl = response.url || `status ${response.statusCode}`;
     logger.info(`Final URL after redirects: ${finalUrl}`);
 
@@ -138,7 +141,7 @@ const finalizeLogin = async (client: Got, response: any): Promise<void> => {
         return;
     }
 
-    if (looksLikeVpnPortalHome(finalUrl)) {
+    if (useVpn && looksLikeVpnPortalHome(finalUrl)) {
         await enterIclassService(client);
         return;
     }

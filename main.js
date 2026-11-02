@@ -6,6 +6,19 @@ const { fork } = require('child_process');
 let mainWindow;
 let serverProcess;
 
+function removeLegacyLoginData() {
+    const userDataDirectory = path.resolve(app.getPath('userData'));
+    const legacyLoginDirectory = path.resolve(userDataDirectory, 'cookies');
+    if (path.dirname(legacyLoginDirectory) !== userDataDirectory) {
+        throw new Error('旧登录数据目录不在 Electron 用户数据目录中');
+    }
+    try {
+        fs.rmSync(legacyLoginDirectory, { recursive: true, force: true });
+    } catch (error) {
+        console.warn('[login-data] Failed to remove legacy login data:', error);
+    }
+}
+
 function createWindow() {
     const isDev = process.env.NODE_ENV === 'development';
 
@@ -22,7 +35,10 @@ function createWindow() {
         }
             
         serverProcess = fork(serverPath, [], {
-            env: Object.assign({}, process.env, { NODE_ENV: 'production', API_PORT: '3000' }),
+            env: Object.assign({}, process.env, {
+                NODE_ENV: 'production',
+                API_PORT: '3000'
+            }),
             stdio: 'pipe'
         });
 
@@ -55,7 +71,10 @@ function createWindow() {
     });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+    removeLegacyLoginData();
+    createWindow();
+});
 
 // 所有窗口关闭后完全退出程序
 app.on('window-all-closed', () => {

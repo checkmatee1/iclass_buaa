@@ -7,16 +7,14 @@ export interface ApiResponse<T> {
 
 export interface LoginRequest {
     studentId: string;
+    password: string;
     useVpn: boolean;
-    vpnUsername?: string;
-    vpnPassword?: string;
 }
 
 export interface LoginData {
     token: string;
     userId: string;
     userName: string;
-    sessionId: string;
 }
 
 export interface CourseDetailItem {
@@ -35,12 +33,10 @@ export interface CourseDetailData {
 
 export interface SignRequest {
     courseSchedId: string;
-    timestamp?: number;
 }
 
 export interface SignQrRequest {
     courseSchedId: string;
-    timestamp?: number;
 }
 
 export interface SignQrData {

@@ -430,3 +430,5 @@ button:disabled {
     flex-wrap: wrap;
   }
 }
+
+.captcha-image { display: block; max-width: 100%; width: 200px; min-height: 48px; object-fit: contain; background: white; border-radius: 6px; }

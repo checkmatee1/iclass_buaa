@@ -84,7 +84,7 @@ const CalendarPage = () => {
         const update = async () => {
             try {
                 const res = await http.get("/api/health");
-                if (active) setVerificationNeeded(res.data?.data?.autoSign?.needsHumanVerification === true);
+                if (active && res.data?.data?.autoSign?.needsHumanVerification === true) setVerificationNeeded(true);
             } catch { /* Keep the last known status during a transient network failure. */ }
         };
         void update();
@@ -180,6 +180,10 @@ const CalendarPage = () => {
 
             const detailRes = await fetchCourseDetails();
             if (!detailRes.ok || !detailRes.data) {
+                if (detailRes.code === "SESSION_EXPIRED" || detailRes.code === "UNAUTHORIZED") {
+                    clearSession();
+                    setVerificationNeeded(true);
+                }
                 throw new Error(detailRes.message || "课程详情获取失败");
             }
 
@@ -346,7 +350,12 @@ const CalendarPage = () => {
             </section>
 
             {loading && <section className="card selected-panel"><p>课程加载中...</p></section>}
-            {error && <section className="card selected-panel"><p className="error-text">{error}</p></section>}
+            {error && <section className="card selected-panel">
+                <p className="error-text">{error}</p>
+                <button onClick={() => verificationNeeded ? navigate("/login") : void loadCalendarData()}>
+                    {verificationNeeded ? "重新登录并验证" : "重试加载课表"}
+                </button>
+            </section>}
 
             <section className="calendar-shell card">
                 <div className="calendar-scroll">

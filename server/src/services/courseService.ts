@@ -2,6 +2,7 @@ import type { CourseDetailItem, CourseItem } from '../core/courseCore';
 import { IClassClient } from '../core/IClassClient';
 import { buildScanSignUrl } from '../core/signCore';
 import logger from '../utils/logger';
+import { AuthFlowError } from '../core/authCore';
 
 export interface ServiceResult<T> {
 	ok: boolean;
@@ -117,7 +118,7 @@ export const getSemesterCoursesForFrontend = async (
 	} catch (error) {
 		return {
 			ok: false,
-			code: 'COURSE_LIST_FAILED',
+			code: client.sessionExpired ? 'SESSION_EXPIRED' : error instanceof AuthFlowError ? error.code : 'COURSE_LIST_FAILED',
 			message: normalizeErrorMessage(error),
 			data: null
 		};
@@ -144,7 +145,7 @@ export const getMergedCourseDetailsForFrontend = async (
 				const message = error instanceof Error ? error.message : String(error);
 				logger.warn(`[course-service] getCourseByDate failed for ${dateStr}: ${message}`);
 
-				if (message.includes('dateStr 格式错误')) {
+				if (client.sessionExpired || error instanceof AuthFlowError || message.includes('dateStr 格式错误')) {
 					throw error;
 				}
 			}
@@ -159,7 +160,7 @@ export const getMergedCourseDetailsForFrontend = async (
 	} catch (error) {
 		return {
 			ok: false,
-			code: 'COURSE_DETAIL_FAILED',
+			code: client.sessionExpired ? 'SESSION_EXPIRED' : error instanceof AuthFlowError ? error.code : 'COURSE_DETAIL_FAILED',
 			message: normalizeErrorMessage(error),
 			data: null
 		};
@@ -190,7 +191,7 @@ export const signNowForFrontend = async (
 	} catch (error) {
 		return {
 			ok: false,
-			code: 'SIGN_FAILED',
+			code: client.sessionExpired ? 'SESSION_EXPIRED' : error instanceof AuthFlowError ? error.code : 'SIGN_FAILED',
 			message: normalizeErrorMessage(error),
 			data: null
 		};
@@ -239,7 +240,7 @@ export const generateSignQrForFrontend = async (
 	} catch (error) {
 		return {
 			ok: false,
-			code: 'SIGN_TIMESTAMP_FAILED',
+			code: client.sessionExpired ? 'SESSION_EXPIRED' : error instanceof AuthFlowError ? error.code : 'SIGN_TIMESTAMP_FAILED',
 			message: normalizeErrorMessage(error),
 			data: null
 		};

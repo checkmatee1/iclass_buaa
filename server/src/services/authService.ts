@@ -103,6 +103,7 @@ const authenticate = async (input: LoginInput, isDefault: boolean): Promise<Logi
 };
 export const loginAndBuildContext = (input: LoginInput): Promise<LoginContext> => authenticate(input, false);
 export const getDefaultLoginContext = async (): Promise<LoginContext> => {
+    if (defaultContext?.client.sessionExpired) defaultContext = null;
     if (defaultContext) return defaultContext;
     prune();
     if (defaultChallenge && pending.has(defaultChallenge.challenge.challengeId)) throw defaultChallenge;

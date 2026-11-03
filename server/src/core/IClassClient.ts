@@ -12,6 +12,7 @@ export interface IClassLoginInput {
 
 export class IClassClient {
     public client: Got;
+    public sessionExpired = false;
     public userInfo: any = null;
     public sessionId: string | null = null;
     public loginName: string | null = null;
@@ -26,13 +27,34 @@ export class IClassClient {
             https: {
                 rejectUnauthorized: true
             },
-            hooks: { afterResponse: [(response) => {
-                const headers = response.request.options.headers;
-                if (headers.sessionid) {
+            hooks: { beforeRedirect: [(options, response) => {
+                const previous = response.request.options;
+                const protectedRequest = Boolean(previous.headers.sessionid) ||
+                    [...previous.url.searchParams.keys()].some((key) => key.toLowerCase() === 'sessionid');
+                if (protectedRequest && /(?:\/login(?:[/?#]|$)|\/authserver\/|\/users\/sign_in)/i.test(options.url.toString())) {
+                    this.sessionExpired = true;
+                    throw new AuthFlowError('SESSION_EXPIRED', '学校登录会话已过期，请重新登录并完成验证');
+                }
+            }], afterResponse: [(response) => {
+                const options = response.request.options;
+                const protectedRequest = Boolean(options.headers.sessionid) ||
+                    [...options.url.searchParams.keys()].some((key) => key.toLowerCase() === 'sessionid');
+                if (protectedRequest) {
                     const body = typeof response.body === 'string' ? response.body : '';
-                    if ([401, 403].includes(response.statusCode) ||
-                        /<input[^>]+name=["'](?:execution|password)["']|<title[^>]*>\s*CAS Login/i.test(body)) {
-                        throw new AuthFlowError('SESSION_EXPIRED', '学校登录会话已过期，请重新验证');
+                    const loginUrl = /(?:\/login(?:[/?#]|$)|\/authserver\/|\/users\/sign_in)/i;
+                    const redirectToLogin = response.statusCode >= 300 && response.statusCode < 400 &&
+                        loginUrl.test(String(response.headers.location ?? ''));
+                    let message = '';
+                    try {
+                        const payload = JSON.parse(body);
+                        if (String(payload?.STATUS) !== '0') message = String(payload?.ERRMSG ?? payload?.message ?? '');
+                    } catch { /* Login HTML is recognized below. */ }
+                    if (this.sessionExpired || [401, 403].includes(response.statusCode) || redirectToLogin ||
+                        loginUrl.test(response.url) ||
+                        /<input[^>]+name=["'](?:execution|password)["']|<title[^>]*>\s*CAS Login/i.test(body) ||
+                        /未登录|未登陆|请.*(?:登录|登陆)|(?:会话|认证|登录|登陆).*(?:过期|失效)|(?:session|token).*(?:expired|invalid)/i.test(message)) {
+                        this.sessionExpired = true;
+                        throw new AuthFlowError('SESSION_EXPIRED', '学校登录会话已过期，请重新登录并完成验证');
                     }
                 }
                 return response;

@@ -191,7 +191,7 @@ export const getCoursesDetail = async (
         const courseId = course.id;
 
         const courseUrl = `${courseInfoUrl}${courseId}&sessionId=${sessionId}`;
-        const courseRes = await client.get(courseUrl);
+        const courseRes = await client.get(courseUrl, { headers: { sessionId } });
 
         let courseData: any;
         try {

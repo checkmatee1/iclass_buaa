@@ -266,6 +266,7 @@ class DefaultAutoSignService implements AutoSignService {
     }
 
     private async ensureContext(now: number): Promise<LoginContext | null> {
+        if (this.context?.client.sessionExpired) this.invalidateContext();
         const shared = peekDefaultLoginContext();
         if (shared && shared !== this.context) {
             this.context = shared;

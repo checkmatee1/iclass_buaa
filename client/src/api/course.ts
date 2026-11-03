@@ -22,8 +22,12 @@ const fromAxiosError = <T>(error: unknown, fallbackMessage: string): ApiResponse
 };
 
 export const fetchCourseDetails = async (): Promise<ApiResponse<CourseDetailData>> => {
-    const res = await http.get<ApiResponse<CourseDetailData>>("/api/course-details");
-    return res.data;
+    try {
+        const res = await http.get<ApiResponse<CourseDetailData>>("/api/course-details");
+        return res.data;
+    } catch (error) {
+        return fromAxiosError<CourseDetailData>(error, "课表加载失败，请稍后重试");
+    }
 };
 
 export const signNow = async (payload: SignRequest): Promise<ApiResponse<unknown>> => {

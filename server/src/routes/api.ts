@@ -6,6 +6,7 @@ import {
 	loginAndBuildContext,
 	getDefaultLoginContext,
 	peekDefaultLoginContext,
+    invalidateDefaultLoginContext,
 	continueCaptchaLogin,
 	CaptchaChallengeError,
 	safeAuthError,
@@ -163,6 +164,19 @@ const handleCaptcha = async (req: IncomingMessage, res: ServerResponse, refresh:
     } catch (error) { sendAuthFailure(res, error); }
 };
 
+const sendCourseResult = (res: ServerResponse, state: SessionState, result: AnyServiceResult): void => {
+    if (result.code === 'SESSION_EXPIRED') {
+        state.context.client.sessionExpired = true;
+        invalidateDefaultLoginContext(state.context);
+        for (const [token, session] of sessions) {
+            if (session.context === state.context) sessions.delete(token);
+        }
+        sendJson(res, 401, result);
+        return;
+    }
+    sendJson(res, result.ok ? 200 : 400, result);
+};
+
 const handleCourses = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 	const token = extractToken(req);
 	const state = sessions.get(token);
@@ -178,7 +192,7 @@ const handleCourses = async (req: IncomingMessage, res: ServerResponse): Promise
 		return;
 	}
 
-	sendJson(res, 400, result);
+	sendCourseResult(res, state, result);
 };
 
 const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse, onDefaultScheduleReload?: () => void): Promise<void> => {
@@ -194,14 +208,14 @@ const handleCourseDetails = async (req: IncomingMessage, res: ServerResponse, on
 		if (prefetch.ok && prefetch.data) {
 			state.courses = prefetch.data.courses;
 		} else {
-			sendJson(res, 400, prefetch);
+			sendCourseResult(res, state, prefetch);
 			return;
 		}
 	}
 
 	const result = await getMergedCourseDetailsForFrontend(state.context.client, state.courses, 7);
 	if (result.ok && state.context === peekDefaultLoginContext()) onDefaultScheduleReload?.();
-	sendJson(res, result.ok ? 200 : 400, result);
+	sendCourseResult(res, state, result);
 };
 
 const handleSign = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -231,13 +245,13 @@ const handleSign = async (req: IncomingMessage, res: ServerResponse): Promise<vo
 		if (prefetch.ok && prefetch.data) {
 			state.courses = prefetch.data.courses;
 		} else {
-			sendJson(res, 400, prefetch);
+			sendCourseResult(res, state, prefetch);
 			return;
 		}
 	}
 
 	const result = await signNowForFrontend(state.context.client, courseSchedId);
-	sendJson(res, result.ok ? 200 : 400, result);
+	sendCourseResult(res, state, result);
 };
 
 const handleSignQr = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -256,7 +270,7 @@ const handleSignQr = async (req: IncomingMessage, res: ServerResponse): Promise<
 		state.context.useVpn,
 		courseSchedId
 	);
-	sendJson(res, result.ok ? 200 : 400, result);
+	sendCourseResult(res, state, result);
 };
 
 const handleLogout = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

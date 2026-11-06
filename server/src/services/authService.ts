@@ -90,7 +90,7 @@ export const safeAuthError = (error: unknown): AuthFlowError => {
     if (error instanceof AuthFlowError) return error;
     return new AuthFlowError('AUTH_UNAVAILABLE', '学校认证或 iClass 请求失败，请稍后重试');
 };
-const authenticate = async (input: LoginInput, isDefault: boolean): Promise<LoginContext> => {
+const authenticate = async (input: LoginInput, isDefault: boolean, automaticCaptcha = false): Promise<LoginContext> => {
     if (!input.password) throw new AuthFlowError('INVALID_PARAM', '请输入统一认证密码');
     const client = new IClassClient(input.useVpn);
     try {
@@ -99,6 +99,7 @@ const authenticate = async (input: LoginInput, isDefault: boolean): Promise<Logi
     } catch (error) {
         if (error instanceof SchoolCaptchaRequired) {
             const item: PendingLogin = {client, input, state: error.state, expiresAt: 0, isDefault};
+            if (!automaticCaptcha) return challengeFor(item, error.message);
             let message = error.message;
             // Four images total: initial image plus at most three replacements.
             // Each image is fetched once and tried with five OCR preprocessing variants.
@@ -132,17 +133,28 @@ const authenticate = async (input: LoginInput, isDefault: boolean): Promise<Logi
     }
 };
 export const loginAndBuildContext = (input: LoginInput): Promise<LoginContext> => authenticate(input, false);
+const defaultLoginInput = (): LoginInput => {
+    const studentId = String(process.env.ICLASS_DEFAULT_STUDENT_ID ?? '').trim();
+    const username = String(process.env.ICLASS_DEFAULT_VPN_USERNAME ?? '').trim();
+    const password = String(process.env.ICLASS_DEFAULT_VPN_PASSWORD ?? '');
+    if (!studentId || !username || !password) throw new AuthFlowError('DEFAULT_LOGIN_NOT_CONFIGURED', '未配置默认 VPN 账号');
+    return {studentId, username, password, useVpn: true};
+};
+// Browser requests always have their own cookie jar and human-entered captcha.
+// They never join an in-flight automatic OCR login or reuse its cached session.
+export const loginDefaultForBrowser = async (): Promise<LoginContext> => {
+    const context = await authenticate(defaultLoginInput(), true);
+    defaultContext = context;
+    return context;
+};
+// Only the background scheduler may start automatic captcha solving.
 export const getDefaultLoginContext = async (): Promise<LoginContext> => {
     if (defaultContext?.client.sessionExpired) defaultContext = null;
     if (defaultContext) return defaultContext;
     prune();
     if (defaultChallenge && pending.has(defaultChallenge.challenge.challengeId)) throw defaultChallenge;
     if (defaultInFlight) return defaultInFlight;
-    const studentId = String(process.env.ICLASS_DEFAULT_STUDENT_ID ?? '').trim();
-    const username = String(process.env.ICLASS_DEFAULT_VPN_USERNAME ?? '').trim();
-    const password = String(process.env.ICLASS_DEFAULT_VPN_PASSWORD ?? '');
-    if (!studentId || !username || !password) throw new AuthFlowError('DEFAULT_LOGIN_NOT_CONFIGURED', '未配置默认 VPN 账号');
-    defaultInFlight = authenticate({studentId, username, password, useVpn: true}, true);
+    defaultInFlight = authenticate(defaultLoginInput(), true, true);
     try { defaultContext = await defaultInFlight; return defaultContext; }
     finally { defaultInFlight = null; }
 };

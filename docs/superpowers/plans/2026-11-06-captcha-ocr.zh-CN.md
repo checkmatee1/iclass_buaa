@@ -30,3 +30,7 @@
 用户后续确认：每张图最多 5 次、最多 4 张图；同图仅抓取一次，依次尝试五种预处理。学校返回不同 captchaId 时立即放弃旧图，计入下一张图预算；不超出 20 次总上限。
 
 本次验证：后端与 OCR 构建成功，五种预处理均通过真实 OCR HTTP 调用（合成示例图，结果符合英数字格式）；真实学校验证码在 image=1/attempt=1 登录成功；后台 authenticated=true、needsHumanVerification=false、lastError=null。未刻意向学校提交错误验证码以触发全部重试；5×4 上限经代码审查确认。
+
+用户范围修正：OCR 仅后台自动签到登录使用。普通网页登录和“登录我的账号”使用独立 cookie jar，直接返回学校验证码，不调用 OCR、不等待后台 OCR、不复用后台登录缓存跳过用户验证。手动默认账号验证成功后仍共享给后台签到。
+
+认证分流验证：后端镜像构建、git diff --check 通过。网页默认登录与验证码刷新均返回 CAPTCHA_REQUIRED 和图片，前后 OCR 提交日志计数差为 0；后台 running/authenticated=true，needsHumanVerification=false，lastError=null。普通账号密码登录沿用 automaticCaptcha=false。本次不改前端和 OCR 模型。

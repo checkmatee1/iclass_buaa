@@ -4,7 +4,7 @@ import { URL } from 'url';
 import type { CourseItem } from '../core/courseCore';
 import {
 	loginAndBuildContext,
-	getDefaultLoginContext,
+	loginDefaultForBrowser,
 	peekDefaultLoginContext,
     invalidateDefaultLoginContext,
 	continueCaptchaLogin,
@@ -151,7 +151,7 @@ const handleLogin = async (req: IncomingMessage, res: ServerResponse): Promise<v
     catch (error) { sendAuthFailure(res, error); }
 };
 const handleDefaultLogin = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    try { sendAuthenticated(res, await getDefaultLoginContext()); }
+    try { sendAuthenticated(res, await loginDefaultForBrowser()); }
     catch (error) { sendAuthFailure(res, error); }
 };
 const handleCaptcha = async (req: IncomingMessage, res: ServerResponse, refresh: boolean): Promise<void> => {

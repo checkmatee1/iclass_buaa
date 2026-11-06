@@ -100,23 +100,29 @@ const authenticate = async (input: LoginInput, isDefault: boolean): Promise<Logi
         if (error instanceof SchoolCaptchaRequired) {
             const item: PendingLogin = {client, input, state: error.state, expiresAt: 0, isDefault};
             let message = error.message;
-            // A new image belongs to the current cookie jar and execution state.
-            // Bound submissions even when a credential error still includes a captcha.
-            for (let attempt = 0; attempt < 3; attempt++) {
+            // Four images total: initial image plus at most three replacements.
+            // Each image is fetched once and tried with five OCR preprocessing variants.
+            for (let imageIndex = 0; imageIndex < 4; imageIndex++) {
                 if (!String(process.env.ICLASS_CAPTCHA_OCR_URL ?? '').trim()) break;
                 const image = await getCaptchaImage(client.client, item.state);
-                const captcha = await recognizeCaptcha(image);
-                if (!captcha) break;
-                logger.info(`[auth] captcha OCR submitting attempt=${attempt + 1}`);
-                try {
-                    await client.login({studentId: input.username ?? input.studentId, password: input.password},
-                        {state: item.state, captcha});
-                    logger.info('[auth] captcha OCR login succeeded');
-                    return buildLoginContext(client, input);
-                } catch (retryError) {
-                    if (!(retryError instanceof SchoolCaptchaRequired)) throw safeAuthError(retryError);
-                    item.state = retryError.state;
-                    message = retryError.message;
+                const imageCaptchaId = item.state.captchaId;
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const captcha = await recognizeCaptcha(image, attempt);
+                    if (!captcha) continue;
+                    logger.info(`[auth] captcha OCR submitting image=${imageIndex + 1} attempt=${attempt + 1}`);
+                    try {
+                        await client.login({studentId: input.username ?? input.studentId, password: input.password},
+                            {state: item.state, captcha});
+                        logger.info('[auth] captcha OCR login succeeded');
+                        return buildLoginContext(client, input);
+                    } catch (retryError) {
+                        if (!(retryError instanceof SchoolCaptchaRequired)) throw safeAuthError(retryError);
+                        item.state = retryError.state;
+                        message = retryError.message;
+                        if (!item.state.captchaId) throw new AuthFlowError('AUTH_PAGE_CHANGED', '学校验证码参数已变化，请重新登录');
+                        // A school-issued new captcha invalidates this image; never submit it again.
+                        if (item.state.captchaId !== imageCaptchaId) break;
+                    }
                 }
             }
             logger.info('[auth] captcha requires manual verification');

@@ -1,5 +1,7 @@
 import { IClassClient } from '../core/IClassClient';
 import { randomUUID } from 'crypto';
+import { recognizeCaptcha } from './captchaOcrService';
+import logger from '../utils/logger';
 import { AuthFlowError, SchoolCaptchaRequired, prepareSsoLogin, getCaptchaImage, type SsoState } from '../core/authCore';
 
 export interface LoginInput {
@@ -96,7 +98,29 @@ const authenticate = async (input: LoginInput, isDefault: boolean): Promise<Logi
         return buildLoginContext(client, input);
     } catch (error) {
         if (error instanceof SchoolCaptchaRequired) {
-            return challengeFor({client, input, state: error.state, expiresAt: 0, isDefault}, error.message);
+            const item: PendingLogin = {client, input, state: error.state, expiresAt: 0, isDefault};
+            let message = error.message;
+            // A new image belongs to the current cookie jar and execution state.
+            // Bound submissions even when a credential error still includes a captcha.
+            for (let attempt = 0; attempt < 3; attempt++) {
+                if (!String(process.env.ICLASS_CAPTCHA_OCR_URL ?? '').trim()) break;
+                const image = await getCaptchaImage(client.client, item.state);
+                const captcha = await recognizeCaptcha(image);
+                if (!captcha) break;
+                logger.info(`[auth] captcha OCR submitting attempt=${attempt + 1}`);
+                try {
+                    await client.login({studentId: input.username ?? input.studentId, password: input.password},
+                        {state: item.state, captcha});
+                    logger.info('[auth] captcha OCR login succeeded');
+                    return buildLoginContext(client, input);
+                } catch (retryError) {
+                    if (!(retryError instanceof SchoolCaptchaRequired)) throw safeAuthError(retryError);
+                    item.state = retryError.state;
+                    message = retryError.message;
+                }
+            }
+            logger.info('[auth] captcha requires manual verification');
+            return challengeFor(item, message);
         }
         throw safeAuthError(error);
     }
